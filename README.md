@@ -51,3 +51,14 @@ env GRADLE_USER_HOME=/tmp/easyreader-gradle-home JAVA_HOME=/usr/lib/jvm/java-21-
 ## First Run
 
 Start the app and import EPUB files with the in-app import button. Pinned shortcuts require launcher confirmation, so Android will ask before placing each selected book shortcut on the home screen.
+
+## Manual Acceptance
+
+Before treating a build as release-ready, run the device checks with a phone or emulator attached:
+
+- Import one or more EPUB files from the in-app import button.
+- Re-import the same EPUB and confirm it is skipped as a duplicate.
+- Open a book from the bookshelf and scroll through a long chapter.
+- Swipe horizontally to switch chapters without triggering changes during diagonal vertical scroll.
+- Exit and reopen the app, then confirm the last reading location is restored.
+- Add a pinned shortcut for a selected book and confirm it opens directly into that book.
