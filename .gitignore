@@ -20,6 +20,9 @@ local.properties
 .cxx/
 captures/
 
+# Local implementation worktrees
+.worktrees/
+
 # OS files
 .DS_Store
 Thumbs.db
