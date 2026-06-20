@@ -23,5 +23,8 @@
                     android:scheme="easyreader" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".ui.reader.ReaderActivity"
+            android:exported="false" />
     </application>
 </manifest>

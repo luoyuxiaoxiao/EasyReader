@@ -5,12 +5,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutContract
 import io.github.luoyuxiaoxiao.easyreader.ui.bookshelf.BookshelfScreen
 import io.github.luoyuxiaoxiao.easyreader.ui.bookshelf.BookshelfViewModel
+import io.github.luoyuxiaoxiao.easyreader.ui.reader.ReaderActivity
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ShortcutContract.bookIdFromUri(intent.data)?.let { bookId ->
+            startActivity(ReaderActivity.createIntent(this, bookId))
+            finish()
+            return
+        }
+
         val appContainer = (application as EasyReaderApp).appContainer
         setContent {
             val viewModel: BookshelfViewModel = viewModel(
@@ -22,7 +30,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 BookshelfScreen(
                     viewModel = viewModel,
-                    onOpenBook = { bookId -> viewModel.showMessage("阅读页将在后续任务接入：$bookId") },
+                    onOpenBook = { bookId -> startActivity(ReaderActivity.createIntent(this, bookId)) },
                 )
             }
         }
