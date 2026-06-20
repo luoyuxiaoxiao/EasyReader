@@ -41,6 +41,7 @@ class ReaderViewModel(
     private var bookId: String? = null
     private var lastProgress: ReadingProgress? = null
     private var progressSaveJob: Job? = null
+    private var saveNextLocatorImmediately = false
 
     fun load(bookId: String) {
         if (this.bookId == bookId && _sessionState.value != null) return
@@ -82,7 +83,12 @@ class ReaderViewModel(
                 chapterProgressText = ReadingProgressFormatter.percent(chapterProgression),
             )
         }
-        scheduleProgressSave()
+        if (saveNextLocatorImmediately) {
+            saveNextLocatorImmediately = false
+            saveProgressNow()
+        } else {
+            scheduleProgressSave()
+        }
     }
 
     fun toggleChrome() {
@@ -99,6 +105,10 @@ class ReaderViewModel(
             delay(1200)
             _uiState.update { state -> if (state.edgeMessage == message) state.copy(edgeMessage = null) else state }
         }
+    }
+
+    fun saveNextLocatorNow() {
+        saveNextLocatorImmediately = true
     }
 
     fun saveProgressNow() {

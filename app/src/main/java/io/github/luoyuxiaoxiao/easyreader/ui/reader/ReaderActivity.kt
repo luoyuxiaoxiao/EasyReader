@@ -134,8 +134,12 @@ class ReaderActivity : FragmentActivity() {
         if (link == null) {
             viewModel.showChromeBriefly("已经到达边界")
         } else {
-            epubNavigator.go(link, animated = true)
-            viewModel.showChromeBriefly()
+            if (epubNavigator.go(link, animated = true)) {
+                viewModel.saveNextLocatorNow()
+                viewModel.showChromeBriefly()
+            } else {
+                viewModel.showChromeBriefly("已经到达边界")
+            }
         }
     }
 
