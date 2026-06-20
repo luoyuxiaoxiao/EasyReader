@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
                 factory = BookshelfViewModel.factory(
                     bookRepository = appContainer.bookRepository,
                     epubImportService = appContainer.epubImportService,
+                    shortcutInstaller = appContainer.shortcutInstaller,
                 )
             )
             MaterialTheme {

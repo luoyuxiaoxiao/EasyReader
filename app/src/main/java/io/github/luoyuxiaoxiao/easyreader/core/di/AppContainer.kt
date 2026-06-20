@@ -7,6 +7,7 @@ import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
 import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
 import io.github.luoyuxiaoxiao.easyreader.reader.readium.ReadiumServices
+import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutInstaller
 
 class AppContainer(context: Context) {
     private val applicationContext = context.applicationContext
@@ -36,5 +37,9 @@ class AppContainer(context: Context) {
             contentResolver = applicationContext.contentResolver,
             bookRepository = bookRepository,
         )
+    }
+
+    val shortcutInstaller: ShortcutInstaller by lazy {
+        ShortcutInstaller(applicationContext, bookRepository)
     }
 }

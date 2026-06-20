@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
+import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutInstaller
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,7 @@ data class BookshelfUiState(
 class BookshelfViewModel(
     private val bookRepository: BookRepository,
     private val epubImportService: EpubImportService,
+    private val shortcutInstaller: ShortcutInstaller,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(BookshelfUiState())
     val uiState: StateFlow<BookshelfUiState> = _uiState.asStateFlow()
@@ -81,11 +83,26 @@ class BookshelfViewModel(
     }
 
     fun requestShortcutsForSelection() {
-        val selectedCount = uiState.value.selectedBookIds.size
-        if (selectedCount == 0) {
+        val state = uiState.value
+        val selectedBooks = state.books.filter { it.id in state.selectedBookIds }
+        if (selectedBooks.isEmpty()) {
             showMessage("请选择书籍")
-        } else {
-            showMessage("桌面快捷方式将在后续任务接入")
+            return
+        }
+        if (!shortcutInstaller.isSupported()) {
+            showMessage("当前桌面不支持添加快捷方式")
+            return
+        }
+        viewModelScope.launch {
+            val requested = withContext(Dispatchers.IO) {
+                shortcutInstaller.requestPinnedShortcuts(selectedBooks)
+            }
+            _uiState.update {
+                it.copy(
+                    selectedBookIds = emptySet(),
+                    message = if (requested > 0) "已发送桌面快捷方式请求" else "当前桌面不支持添加快捷方式",
+                )
+            }
         }
     }
 
@@ -101,11 +118,12 @@ class BookshelfViewModel(
         fun factory(
             bookRepository: BookRepository,
             epubImportService: EpubImportService,
+            shortcutInstaller: ShortcutInstaller,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    BookshelfViewModel(bookRepository, epubImportService) as T
+                    BookshelfViewModel(bookRepository, epubImportService, shortcutInstaller) as T
             }
     }
 }
