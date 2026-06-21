@@ -63,11 +63,22 @@ Result: check mode confirmed `versionCode: 1 -> 2`, `versionName: 0.1.0 -> 0.1.1
 
 ## Release Steps
 
-1. Commit the implementation branch.
-2. Fast-forward merge `bugfix/main-bugs` into `main`.
-3. Run `EASYREADERAPK_CONFIRM=yes bash EasyReaderAPK.sh --remote 0.1.1` from the main workspace.
-4. Wait for GitHub Actions release build to finish.
-5. Confirm `https://github.com/luoyuxiaoxiao/EasyReader/releases/tag/v0.1.1` contains the APK, SHA-256 file, and the release notes from `docs/releases/easyreader-0.1.1-release.md`.
+Completed release flow:
+
+1. Committed the implementation branch.
+2. Fast-forward merged `bugfix/main-bugs` into `main`.
+3. Ran `EASYREADERAPK_CONFIRM=yes bash EasyReaderAPK.sh --remote 0.1.1` from the main workspace.
+4. GitHub Actions run `27905247491` completed successfully in `4m 8s`.
+5. Confirmed `https://github.com/luoyuxiaoxiao/EasyReader/releases/tag/v0.1.1` contains the signed APK, SHA-256 file, and concise release notes from `docs/releases/easyreader-0.1.1-release.md`.
+
+## Published Result
+
+- Release: `https://github.com/luoyuxiaoxiao/EasyReader/releases/tag/v0.1.1`
+- Commit tagged by `v0.1.1`: `3bab130 chore: release EasyReader 0.1.1`
+- Assets:
+  - `EasyReader-v0.1.1-release.apk`
+  - `EasyReader-v0.1.1-release.apk.sha256`
+- APK SHA-256: `e8d3dae2a8b96fad05d36471695a02318c34ec938225a88a7a2e8cc1460a6e58`
 
 ## Next Goals
 
