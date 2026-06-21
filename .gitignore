@@ -28,6 +28,10 @@ local.properties
 .externalNativeBuild/
 .cxx/
 captures/
+*.apk
+*.aab
+*.idsig
+*.sha256
 
 # Local implementation worktrees
 .worktrees/
