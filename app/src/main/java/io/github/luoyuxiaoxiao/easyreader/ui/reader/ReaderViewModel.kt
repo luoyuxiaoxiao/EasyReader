@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.luoyuxiaoxiao.easyreader.core.result.EasyReaderResult
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
+import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgress
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgressFormatter
 import io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSession
@@ -15,13 +16,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class ReaderUiState(
     val title: String = "EasyReader",
-    val chromeVisible: Boolean = true,
+    val chromeVisible: Boolean = false,
     val totalProgressText: String = "0.00%",
     val chapterProgressText: String = "0.00%",
     val edgeMessage: String? = null,
@@ -30,6 +32,7 @@ data class ReaderUiState(
 
 class ReaderViewModel(
     private val bookRepository: BookRepository,
+    private val readerSettingsStore: ReaderSettingsStore,
     private val readerSession: EpubReaderSession,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -54,7 +57,8 @@ class ReaderViewModel(
             }
             _uiState.update { it.copy(title = book.title, errorMessage = null) }
             val progress = withContext(Dispatchers.IO) { bookRepository.progress(bookId) }
-            when (val result = withContext(Dispatchers.IO) { readerSession.open(book, progress) }) {
+            val settings = readerSettingsStore.settings.first()
+            when (val result = withContext(Dispatchers.IO) { readerSession.open(book, progress, settings) }) {
                 is EasyReaderResult.Success -> _sessionState.value = result.value
                 is EasyReaderResult.Failure -> _uiState.update { it.copy(errorMessage = result.message) }
             }
@@ -139,12 +143,13 @@ class ReaderViewModel(
     companion object {
         fun factory(
             bookRepository: BookRepository,
+            readerSettingsStore: ReaderSettingsStore,
             readerSession: EpubReaderSession,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ReaderViewModel(bookRepository, readerSession) as T
+                    ReaderViewModel(bookRepository, readerSettingsStore, readerSession) as T
             }
     }
 }

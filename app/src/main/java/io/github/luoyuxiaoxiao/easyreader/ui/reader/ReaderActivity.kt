@@ -41,6 +41,7 @@ class ReaderActivity : FragmentActivity() {
             this,
             ReaderViewModel.factory(
                 bookRepository = appContainer.bookRepository,
+                readerSettingsStore = appContainer.readerSettingsStore,
                 readerSession = EpubReaderSession(appContainer.readiumServices),
             )
         )[ReaderViewModel::class.java]
@@ -94,6 +95,7 @@ class ReaderActivity : FragmentActivity() {
     private fun attachNavigator(session: io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSessionState) {
         supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
             initialLocator = session.initialLocator,
+            initialPreferences = session.initialPreferences,
         )
         supportFragmentManager.commitNow {
             replace(fragmentContainerId, EpubNavigatorFragment::class.java, null)

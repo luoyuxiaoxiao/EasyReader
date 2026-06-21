@@ -15,6 +15,15 @@ build/
 # Android local configuration
 local.properties
 
+# Release signing material must stay local or in GitHub Secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*keystore.properties
+*release-secrets.env
+
 # Native and generated build output
 .externalNativeBuild/
 .cxx/

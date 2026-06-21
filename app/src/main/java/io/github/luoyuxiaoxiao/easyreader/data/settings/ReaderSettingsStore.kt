@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.shared.ExperimentalReadiumApi
 
 private val Context.readerSettingsDataStore by preferencesDataStore(name = "reader_settings")
 
@@ -18,6 +20,15 @@ data class ReaderSettings(
     val backgroundColor: String = "#FFFFFF",
     val foregroundColor: String = "#1F1F1F",
 )
+
+@OptIn(ExperimentalReadiumApi::class)
+fun ReaderSettings.toEpubPreferences(): EpubPreferences =
+    EpubPreferences(
+        fontSize = fontScale.toDouble(),
+        publisherStyles = publisherStyles,
+        // 滚动模式必须显式交给 Readium，否则 navigator 会沿用分页默认行为。
+        scroll = scroll,
+    )
 
 class ReaderSettingsStore(context: Context) {
     private val dataStore = context.applicationContext.readerSettingsDataStore

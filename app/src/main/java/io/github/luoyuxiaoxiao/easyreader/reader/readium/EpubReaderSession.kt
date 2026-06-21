@@ -1,10 +1,13 @@
 package io.github.luoyuxiaoxiao.easyreader.reader.readium
 
 import io.github.luoyuxiaoxiao.easyreader.core.result.EasyReaderResult
+import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettings
+import io.github.luoyuxiaoxiao.easyreader.data.settings.toEpubPreferences
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgress
 import java.io.File
 import org.json.JSONObject
+import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
@@ -15,6 +18,7 @@ data class EpubReaderSessionState(
     val publication: Publication,
     val navigatorFactory: EpubNavigatorFactory,
     val initialLocator: Locator?,
+    val initialPreferences: EpubPreferences,
     val initialReadingOrderIndex: Int,
 )
 
@@ -26,6 +30,7 @@ class EpubReaderSession(
     suspend fun open(
         book: Book,
         savedProgress: ReadingProgress?,
+        settings: ReaderSettings,
     ): EasyReaderResult<EpubReaderSessionState> {
         close()
 
@@ -54,6 +59,7 @@ class EpubReaderSession(
                 publication = publication,
                 navigatorFactory = EpubNavigatorFactory(publication),
                 initialLocator = initialLocator,
+                initialPreferences = settings.toEpubPreferences(),
                 initialReadingOrderIndex = savedProgress?.readingOrderIndex ?: 0,
             )
         )

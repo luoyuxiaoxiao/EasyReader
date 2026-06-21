@@ -48,19 +48,19 @@ fun ReaderChrome(
                     )
                 }
             }
-        }
 
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color(0xCCFFFFFF))
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(state.totalProgressText, style = MaterialTheme.typography.labelMedium)
-            Text(state.edgeMessage ?: state.chapterProgressText, style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color(0xCCFFFFFF))
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(state.totalProgressText, style = MaterialTheme.typography.labelMedium)
+                Text(state.edgeMessage ?: state.chapterProgressText, style = MaterialTheme.typography.labelMedium)
+            }
         }
 
         state.errorMessage?.let { message ->

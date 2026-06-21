@@ -99,7 +99,10 @@ private fun BookshelfContent(
                         }
                     } else {
                         Button(
-                            onClick = { documentPicker.launch(arrayOf("application/epub+zip")) },
+                            onClick = {
+                                // 不同 DocumentsProvider 对 .epub 的 MIME 识别不一致，放宽选择器后由导入解析继续兜底。
+                                documentPicker.launch(arrayOf("application/epub+zip", "application/octet-stream", "*/*"))
+                            },
                             enabled = !state.isImporting,
                         ) {
                             Text("导入")

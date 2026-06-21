@@ -85,6 +85,87 @@
       },
       "problemMatcher": ["$gradle"],
       "detail": "Requires a connected Android device or a running emulator."
+    },
+    {
+      "label": "Android: Start Emulator",
+      "type": "shell",
+      "command": "/home/luoyu/Android/Sdk/platform-tools/adb start-server; AVD=$(/home/luoyu/Android/Sdk/emulator/emulator -list-avds | head -n 1); if [ -z \"$AVD\" ]; then echo 'No AVD found! Please create one first.'; exit 1; fi; echo \"Starting headless AVD: $AVD\"; /home/luoyu/Android/Sdk/emulator/emulator -avd \"$AVD\" -gpu swiftshader_indirect -no-audio -no-snapshot-load -no-window -qemu -lcd-density 160",
+      "options": {
+        "env": {
+          "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+          "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Starts the first available Android Emulator without the Qt window/sidebar. Use scrcpy to mirror it if you need an interactive screen."
+    },
+    {
+      "label": "Android: Mirror Emulator (scrcpy)",
+      "type": "shell",
+      "command": "command -v scrcpy >/dev/null || { echo 'scrcpy not found. Install it with: sudo pacman -S scrcpy'; exit 127; }; SERIAL=$(/home/luoyu/Android/Sdk/platform-tools/adb devices | awk '/^emulator-/{print $1; exit}'); if [ -z \"$SERIAL\" ]; then echo 'No running emulator found. Run Android: Start Emulator first.'; exit 1; fi; scrcpy --serial \"$SERIAL\" --max-size 1200 --window-title \"$SERIAL\"",
+      "options": {
+        "env": {
+          "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+          "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Mirrors a running headless emulator as a plain Android screen. Requires scrcpy."
+    },
+    {
+      "label": "Android: Start Emulator (Qt window)",
+      "type": "shell",
+      "command": "/home/luoyu/Android/Sdk/platform-tools/adb start-server; export QT_QPA_PLATFORM=xcb; AVD=$(/home/luoyu/Android/Sdk/emulator/emulator -list-avds | head -n 1); if [ -z \"$AVD\" ]; then echo 'No AVD found! Please create one first.'; exit 1; fi; echo \"Starting AVD with Qt window: $AVD\"; /home/luoyu/Android/Sdk/emulator/emulator -avd \"$AVD\" -gpu auto -no-audio -no-snapshot-load -qemu -lcd-density 160",
+      "options": {
+        "env": {
+          "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+          "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Fallback launcher using the regular Android Emulator Qt window, including its toolbar/sidebar."
+    },
+    {
+      "label": "Android: Stop Emulator",
+      "type": "shell",
+      "command": "/home/luoyu/Android/Sdk/platform-tools/adb -e emu kill",
+      "options": {
+        "env": {
+          "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+          "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Stops the currently running Android Emulator."
+    },
+    {
+      "label": "Android: 1. Download System Image (API 34)",
+      "type": "shell",
+      "command": "yes | /home/luoyu/Android/Sdk/cmdline-tools/latest/bin/sdkmanager \"system-images;android-34;google_apis;x86_64\"",
+      "options": {
+        "env": {
+          "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+          "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Downloads Android 14 (API 34) system image. Only needs to be run once."
+    },
+    {
+      "label": "Android: 2. Create AVD",
+      "type": "shell",
+      "command": "echo \"no\" | /home/luoyu/Android/Sdk/cmdline-tools/latest/bin/avdmanager create avd -n \"Android_34_Emulator\" -k \"system-images;android-34;google_apis;x86_64\" --force",
+      "options": {
+        "env": {
+          "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+          "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk"
+        }
+      },
+      "problemMatcher": [],
+      "detail": "Creates an Android Virtual Device using API 34. Run after downloading the system image."
     }
   ]
 }

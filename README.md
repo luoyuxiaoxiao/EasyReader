@@ -48,6 +48,37 @@ Install the debug APK on a connected device:
 env GRADLE_USER_HOME=/tmp/easyreader-gradle-home JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=/home/luoyu/Android/Sdk ANDROID_SDK_ROOT=/home/luoyu/Android/Sdk ./gradlew :app:installDebug --no-daemon
 ```
 
+## Release
+
+Release APKs are built, signed, and published by GitHub Actions when a `v*` tag is pushed.
+
+Before the first release, add these repository secrets in GitHub Actions settings:
+
+- `RELEASE_KEYSTORE_BASE64`
+- `RELEASE_KEYSTORE_PASSWORD`
+- `RELEASE_KEY_ALIAS`
+- `RELEASE_KEY_PASSWORD`
+
+Check the release plan:
+
+```bash
+./EasyReaderAPK --check 0.1.0
+```
+
+After the worktree has been merged to `main`, publish locally:
+
+```bash
+./EasyReaderAPK 0.1.0
+```
+
+If local Gradle is unavailable, publish through GitHub Actions only:
+
+```bash
+./EasyReaderAPK --remote 0.1.0
+```
+
+See `docs/releases/github-actions-apk-release.md` for the full flow.
+
 ## VS Code
 
 Open the repository root in VS Code. The checked-in `.vscode` configuration sets JDK 21, Android SDK paths, Gradle wrapper import, and common tasks.
