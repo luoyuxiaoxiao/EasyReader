@@ -1,6 +1,6 @@
 # EasyReader
 
-EasyReader is an Android EPUB reader MVP focused on a small local library and a calm long-form reading flow.
+EasyReader is an Android EPUB reader focused on a small local library and a calm long-form reading flow.
 
 ## Current MVP Scope
 
@@ -8,9 +8,9 @@ EasyReader is an Android EPUB reader MVP focused on a small local library and a 
 - Detect duplicate imports with SHA-256.
 - Show imported books in a local bookshelf.
 - Open EPUB books in a vertically scrolling reader powered by Readium.
-- Switch chapters with horizontal swipes while keeping vertical scrolling smooth.
+- Switch chapters with horizontal swipes while keeping vertical scrolling and Android back gestures smooth.
 - Persist and restore reading progress.
-- Show whole-book and current-chapter reading percentages.
+- Show whole-book and current-chapter reading percentages from the WebView scroll bridge.
 - Request pinned launcher shortcuts that reopen a selected book.
 
 Not included yet: PDF support, cloud sync, accounts, notes, highlights, search, TTS, OPDS, or page-turn mode.
@@ -62,22 +62,24 @@ Before the first release, add these repository secrets in GitHub Actions setting
 Check the release plan:
 
 ```bash
-./EasyReaderAPK --check 0.1.0
+./EasyReaderAPK --check 0.1.2
 ```
 
 After the worktree has been merged to `main`, publish locally:
 
 ```bash
-./EasyReaderAPK 0.1.0
+./EasyReaderAPK 0.1.2
 ```
 
 If local Gradle is unavailable, publish through GitHub Actions only:
 
 ```bash
-./EasyReaderAPK --remote 0.1.0
+./EasyReaderAPK --remote 0.1.2
 ```
 
 See `docs/releases/github-actions-apk-release.md` for the full flow.
+
+Current implementation notes are maintained in `docs/PROJECT.md`.
 
 ## VS Code
 
@@ -112,6 +114,9 @@ Before treating a build as release-ready, run the device checks with a phone or 
 - Import one or more EPUB files from the in-app import button.
 - Re-import the same EPUB and confirm it is skipped as a duplicate.
 - Open a book from the bookshelf and scroll through a long chapter.
-- Swipe horizontally to switch chapters without triggering changes during diagonal vertical scroll.
+- Tap once to toggle reader chrome and confirm text selection handles do not appear.
+- Scroll a chapter and confirm only the bottom progress chrome appears while the top chrome stays hidden.
+- Swipe horizontally to switch chapters without triggering changes during diagonal vertical scroll or system back areas.
+- After switching chapters, confirm bottom progress refreshes immediately; first cover-like page starts at 0%, and the final non-scrollable page reaches 100%.
 - Exit and reopen the app, then confirm the last reading location is restored.
 - Add a pinned shortcut for a selected book and confirm it opens directly into that book.

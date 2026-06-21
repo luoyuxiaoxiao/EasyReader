@@ -15,15 +15,14 @@ class ReaderGestureLayout @JvmOverloads constructor(
 ) : FrameLayout(context, attrs) {
     var onNextChapter: () -> Unit = {}
     var onPreviousChapter: () -> Unit = {}
+    var onChromeTap: () -> Unit = {}
     var onVerticalScrollStarted: () -> Unit = {}
     var onVerticalScrollFinished: () -> Unit = {}
     var onFontScaleChanged: (Float) -> Unit = {}
     var onFontScaleFinished: () -> Unit = {}
+    var topChromeControlsVisible: Boolean = false
 
-    private val detector = ChapterSwipeDetector(
-        screenWidthPx = resources.displayMetrics.widthPixels.toFloat(),
-        density = resources.displayMetrics.density,
-    )
+    private val density = resources.displayMetrics.density
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -37,10 +36,23 @@ class ReaderGestureLayout @JvmOverloads constructor(
     private var downY = 0f
     private var downTime = 0L
     private var verticalLocked = false
+    private var horizontalLocked = false
     private var scaling = false
-    private var lastSwitchAt = 0L
+    private var passThroughToChromeControls = false
+    private var lastSwitchAt = -SWITCH_COOLDOWN_MS
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            passThroughToChromeControls = topChromeControlsVisible && event.y <= TOP_CHROME_CONTROLS_HEIGHT_DP * density
+        }
+        if (passThroughToChromeControls) {
+            val handled = super.dispatchTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                passThroughToChromeControls = false
+            }
+            return handled
+        }
+
         scaleDetector.onTouchEvent(event)
 
         when (event.actionMasked) {
@@ -49,6 +61,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 downY = event.y
                 downTime = event.eventTime
                 verticalLocked = false
+                horizontalLocked = false
                 scaling = false
             }
 
@@ -56,58 +69,109 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 // 双指缩放期间不参与滚动锁定、点击和切章，避免阅读手势互相打架。
                 scaling = true
                 verticalLocked = false
+                horizontalLocked = false
             }
 
             MotionEvent.ACTION_MOVE -> {
                 if (scaling || event.pointerCount > 1) return super.dispatchTouchEvent(event)
                 val dx = event.x - downX
                 val dy = event.y - downY
-                // 状态流转：按下后先观察方向，纵向胜出就锁定阅读滚动，抬手时仅横向手势可切章。
-                if (!verticalLocked && abs(dy) > abs(dx) * 1.2f && abs(dy) > 12f * resources.displayMetrics.density) {
+                // 状态流转：超过轻点范围后立即锁定方向；横向锁定后消费事件，避免 WebView 抢走切章手势。
+                if (!verticalLocked && !horizontalLocked && abs(dy) > abs(dx) * 1.2f && abs(dy) > DIRECTION_LOCK_SLOP_DP * density) {
                     verticalLocked = true
                     onVerticalScrollStarted()
                 }
+                if (!verticalLocked && !horizontalLocked && abs(dx) > abs(dy) * 1.05f && abs(dx) > DIRECTION_LOCK_SLOP_DP * density) {
+                    horizontalLocked = true
+                    cancelChildTouch()
+                    return true
+                }
+                if (horizontalLocked) return true
             }
 
             MotionEvent.ACTION_UP -> {
+                var handledByReader = horizontalLocked
                 val elapsedSeconds = ((event.eventTime - downTime).coerceAtLeast(1L)) / 1000f
                 val dx = event.x - downX
                 val dy = event.y - downY
                 val velocityX = dx / elapsedSeconds
+                val explicitTap = isExplicitTap(event, dx, dy)
                 if (verticalLocked) {
                     onVerticalScrollFinished()
-                } else if (!scaling && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
-                    when (detector.evaluate(downX, dx, dy, velocityX)) {
+                } else if (!scaling && !explicitTap && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
+                    when (chapterSwipeDecision(dx, dy, velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
                             onNextChapter()
+                            handledByReader = true
                         }
 
                         ChapterSwipeDecision.PreviousChapter -> {
                             lastSwitchAt = event.eventTime
                             onPreviousChapter()
+                            handledByReader = true
                         }
 
                         ChapterSwipeDecision.KeepReading -> Unit
                     }
+                } else if (!scaling && explicitTap) {
+                    cancelChildTouch()
+                    onChromeTap()
+                    handledByReader = true
                 }
                 if (scaling) onFontScaleFinished()
                 verticalLocked = false
+                horizontalLocked = false
                 scaling = false
+                if (handledByReader) return true
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 if (verticalLocked) onVerticalScrollFinished()
                 if (scaling) onFontScaleFinished()
                 verticalLocked = false
+                horizontalLocked = false
                 scaling = false
+                passThroughToChromeControls = false
             }
         }
 
         return super.dispatchTouchEvent(event)
     }
 
+    private fun isExplicitTap(event: MotionEvent, dx: Float, dy: Float): Boolean {
+        val movement = maxOf(abs(dx), abs(dy))
+        val duration = event.eventTime - downTime
+        return movement <= TAP_SLOP_DP * density && duration <= TAP_TIMEOUT_MS
+    }
+
+    private fun chapterSwipeDecision(dx: Float, dy: Float, velocityX: Float): ChapterSwipeDecision {
+        val gestureWidth = width.takeIf { it > 0 }?.toFloat() ?: resources.displayMetrics.widthPixels.toFloat()
+        return ChapterSwipeDetector(
+            screenWidthPx = gestureWidth,
+            density = density,
+        ).evaluate(
+            startXPx = downX,
+            dxPx = dx,
+            dyPx = dy,
+            velocityXPxPerSecond = velocityX,
+        )
+    }
+
+    private fun cancelChildTouch() {
+        val cancel = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_CANCEL, downX, downY, 0)
+        try {
+            super.dispatchTouchEvent(cancel)
+        } finally {
+            cancel.recycle()
+        }
+    }
+
     private companion object {
         const val SWITCH_COOLDOWN_MS = 250L
+        const val DIRECTION_LOCK_SLOP_DP = 12f
+        const val TAP_SLOP_DP = 8f
+        const val TAP_TIMEOUT_MS = 250L
+        const val TOP_CHROME_CONTROLS_HEIGHT_DP = 96f
     }
 }

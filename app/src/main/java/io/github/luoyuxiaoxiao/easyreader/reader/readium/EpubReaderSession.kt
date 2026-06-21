@@ -20,6 +20,7 @@ data class EpubReaderSessionState(
     val initialLocator: Locator?,
     val initialPreferences: EpubPreferences,
     val initialReadingOrderIndex: Int,
+    val chapterWeights: List<Int>,
 )
 
 class EpubReaderSession(
@@ -61,6 +62,7 @@ class EpubReaderSession(
                 initialLocator = initialLocator,
                 initialPreferences = settings.toEpubPreferences(),
                 initialReadingOrderIndex = savedProgress?.readingOrderIndex ?: 0,
+                chapterWeights = EpubChapterWeightEstimator.estimate(File(book.filePath)),
             )
         )
     }

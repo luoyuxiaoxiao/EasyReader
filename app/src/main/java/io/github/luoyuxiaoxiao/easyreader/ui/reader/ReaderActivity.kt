@@ -2,10 +2,14 @@ package io.github.luoyuxiaoxiao.easyreader.ui.reader
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.FragmentContainerView
@@ -27,6 +31,8 @@ class ReaderActivity : FragmentActivity() {
     private var navigator: EpubNavigatorFragment? = null
     private var locatorJob: Job? = null
     private var fragmentContainerId: Int = View.NO_ID
+    private var scrollWebView: WebView? = null
+    private var currentReadingOrderIndex: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Readium 的 EpubNavigatorFragment 必须通过 navigatorFactory 创建，不能走系统 Fragment 状态恢复。
@@ -61,6 +67,9 @@ class ReaderActivity : FragmentActivity() {
             ComposeView(this).apply {
                 setContent {
                     val state = viewModel.uiState.collectAsState().value
+                    SideEffect {
+                        root.topChromeControlsVisible = state.topChromeVisible
+                    }
                     MaterialTheme {
                         ReaderChrome(state = state, onBack = { finish() })
                     }
@@ -71,9 +80,30 @@ class ReaderActivity : FragmentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             )
         )
-        root.setOnClickListener { viewModel.toggleChrome() }
-        root.onVerticalScrollStarted = viewModel::onScrollGestureStarted
-        root.onVerticalScrollFinished = viewModel::onScrollGestureFinished
+        root.onChromeTap = viewModel::toggleChrome
+        root.onVerticalScrollStarted = {
+            viewModel.sessionState.value?.let { session ->
+                rebindWebViewScrollUpdates(session)
+                updateReaderContentScrollProgress(
+                    nonScrollableProgression = ReaderScrollProgress.syntheticNonScrollableProgression(
+                        readingOrderIndex = currentReadingOrderIndex,
+                        readingOrderCount = session.chapterWeights.size,
+                    ),
+                )
+            }
+            viewModel.onScrollGestureStarted()
+        }
+        root.onVerticalScrollFinished = {
+            viewModel.onScrollGestureFinished()
+            viewModel.sessionState.value?.let { session ->
+                updateReaderContentScrollProgress(
+                    nonScrollableProgression = ReaderScrollProgress.syntheticNonScrollableProgression(
+                        readingOrderIndex = currentReadingOrderIndex,
+                        readingOrderCount = session.chapterWeights.size,
+                    ),
+                )
+            }
+        }
         root.onFontScaleChanged = { scaleFactor ->
             val change = viewModel.adjustFontScale(scaleFactor)
             navigator?.submitPreferences(change.preferences)
@@ -110,6 +140,7 @@ class ReaderActivity : FragmentActivity() {
         }
         navigator = supportFragmentManager.findFragmentById(fragmentContainerId) as? EpubNavigatorFragment
         collectLocatorUpdates(session)
+        bindWebViewScrollUpdates(session)
     }
 
     private fun collectLocatorUpdates(session: io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSessionState) {
@@ -122,6 +153,7 @@ class ReaderActivity : FragmentActivity() {
                     val readingOrderIndex = session.publication.readingOrder.indexOfFirst {
                         it.href.toString() == href
                     }.takeIf { it >= 0 } ?: session.initialReadingOrderIndex
+                    currentReadingOrderIndex = readingOrderIndex
                     viewModel.onLocatorChanged(
                         locatorJson = locator.toJSON().toString(),
                         readingOrderIndex = readingOrderIndex,
@@ -145,18 +177,126 @@ class ReaderActivity : FragmentActivity() {
             viewModel.showChromeBriefly("已经到达边界")
         } else {
             if (epubNavigator.go(link, animated = true)) {
+                currentReadingOrderIndex = target
                 viewModel.saveNextLocatorNow()
-                viewModel.showChromeBriefly()
+                viewModel.onReaderChapterOpened(
+                    readingOrderIndex = target,
+                    chapterWeights = session.chapterWeights,
+                )
+                rebindWebViewScrollUpdates(session, sampleAfterBind = true)
             } else {
                 viewModel.showChromeBriefly("已经到达边界")
             }
         }
     }
 
+    private fun bindWebViewScrollUpdates(
+        session: io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSessionState,
+        attempt: Int = 0,
+        force: Boolean = false,
+        sampleAfterBind: Boolean = false,
+    ) {
+        val existing = scrollWebView
+        if (existing != null && !force) return
+
+        val webView = window.decorView.findBestVisibleWebView()
+        if (webView == null) {
+            if (attempt < WEB_VIEW_BIND_MAX_ATTEMPTS) {
+                window.decorView.postDelayed(
+                    { bindWebViewScrollUpdates(session, attempt + 1, sampleAfterBind = sampleAfterBind) },
+                    WEB_VIEW_BIND_RETRY_MS,
+                )
+            }
+            return
+        }
+
+        if (existing !== webView) {
+            existing?.setOnScrollChangeListener(null)
+        }
+        scrollWebView = webView
+        webView.setOnScrollChangeListener { view, _, scrollY, _, oldScrollY ->
+            if (scrollY == oldScrollY) return@setOnScrollChangeListener
+            updateReaderContentScrollProgress(webView = webView, viewport = view)
+        }
+        if (sampleAfterBind) {
+            // 切章后 WebView 不一定立即发出滚动事件，绑定成功时补一次首尾页测量。
+            updateReaderContentScrollProgress(
+                webView = webView,
+                viewport = webView,
+                nonScrollableProgression = ReaderScrollProgress.syntheticNonScrollableProgression(
+                    readingOrderIndex = currentReadingOrderIndex,
+                    readingOrderCount = session.chapterWeights.size,
+                ),
+            )
+        }
+    }
+
+    private fun rebindWebViewScrollUpdates(
+        session: io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSessionState,
+        sampleAfterBind: Boolean = false,
+    ) {
+        val oldWebView = scrollWebView
+        oldWebView?.setOnScrollChangeListener(null)
+        scrollWebView = null
+        window.decorView.post { bindWebViewScrollUpdates(session, force = true, sampleAfterBind = sampleAfterBind) }
+        window.decorView.postDelayed(
+            { bindWebViewScrollUpdates(session, force = true, sampleAfterBind = sampleAfterBind) },
+            250L,
+        )
+        window.decorView.postDelayed(
+            { bindWebViewScrollUpdates(session, force = true, sampleAfterBind = sampleAfterBind) },
+            700L,
+        )
+    }
+
+    private fun updateReaderContentScrollProgress(
+        webView: WebView? = scrollWebView ?: window.decorView.findBestVisibleWebView(),
+        viewport: View? = webView,
+        nonScrollableProgression: Double? = 1.0,
+    ) {
+        val currentWebView = webView ?: return
+        val session = viewModel.sessionState.value ?: return
+        val contentHeightPx = ReaderScrollProgress.webViewContentHeightPx(currentWebView.contentHeight)
+        viewModel.onReaderContentScrolled(
+            readingOrderIndex = currentReadingOrderIndex,
+            chapterWeights = session.chapterWeights,
+            scrollY = currentWebView.scrollY,
+            viewportHeightPx = viewport?.height ?: currentWebView.height,
+            contentHeightPx = contentHeightPx,
+            nonScrollableProgression = nonScrollableProgression,
+        )
+    }
+
     companion object {
         private const val EXTRA_BOOK_ID = "book_id"
+        private const val WEB_VIEW_BIND_MAX_ATTEMPTS = 20
+        private const val WEB_VIEW_BIND_RETRY_MS = 100L
 
         fun createIntent(context: Context, bookId: String): Intent =
             Intent(context, ReaderActivity::class.java).putExtra(EXTRA_BOOK_ID, bookId)
     }
+}
+
+private fun View.findBestVisibleWebView(): WebView? {
+    var best: WebView? = null
+    var bestArea = 0
+    fun visit(view: View) {
+        if (view is WebView) {
+            val rect = Rect()
+            if (view.isShown && view.getGlobalVisibleRect(rect)) {
+                val area = rect.width() * rect.height()
+                if (area >= bestArea) {
+                    best = view
+                    bestArea = area
+                }
+            }
+        }
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                visit(view.getChildAt(index))
+            }
+        }
+    }
+    visit(this)
+    return best
 }

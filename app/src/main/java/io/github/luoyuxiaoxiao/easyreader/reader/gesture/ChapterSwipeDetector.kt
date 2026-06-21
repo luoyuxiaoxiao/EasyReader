@@ -13,7 +13,7 @@ class ChapterSwipeDetector(
     private val screenWidthPx: Float,
     density: Float,
 ) {
-    private val minHorizontalDistancePx = max(56f * density, screenWidthPx * 0.18f)
+    private val minHorizontalDistancePx = max(48f * density, screenWidthPx * 0.12f)
     private val fastDistancePx = 48f * density
     private val fastVelocityPxPerSecond = 800f * density
     private val systemBackEdgePx = 32f * density

@@ -42,7 +42,72 @@ data class ReaderUiState(
 
     val fontSizeOverlayVisible: Boolean
         get() = fontSizeOverlayText != null
+
+    val shouldRefreshScrollProgressHideOnLocatorChanged: Boolean
+        get() = scrollProgressVisible && !globalChromeVisible
 }
+
+fun ReaderUiState.afterExplicitChromeTap(): ReaderUiState =
+    copy(
+        globalChromeVisible = !globalChromeVisible,
+        scrollInProgress = false,
+        scrollProgressVisible = false,
+        edgeMessage = null,
+    )
+
+fun ReaderUiState.afterScrollStarted(): ReaderUiState =
+    copy(
+        // 滚动只允许带出底部进度；顶部 Chrome 必须等下一次明确点击才重新出现。
+        globalChromeVisible = false,
+        scrollInProgress = true,
+        scrollProgressVisible = true,
+    )
+
+fun ReaderUiState.afterScrollFinished(): ReaderUiState =
+    copy(
+        // 抬手后 WebView 可能还在惯性滚动；直到隐藏倒计时结束前都继续保护滚动桥进度。
+        scrollInProgress = true,
+        scrollProgressVisible = true,
+    )
+
+fun ReaderUiState.afterTransientBottomChrome(message: String? = null): ReaderUiState =
+    copy(
+        scrollInProgress = false,
+        scrollProgressVisible = true,
+        edgeMessage = message,
+    )
+
+fun ReaderUiState.afterReaderContentScrolled(
+    totalProgression: Double?,
+    chapterProgression: Double?,
+): ReaderUiState =
+    copy(
+        // 真实内容滚动事件覆盖点击状态；滚动期间顶部 Chrome 不自动恢复。
+        globalChromeVisible = false,
+        scrollInProgress = true,
+        scrollProgressVisible = true,
+        totalProgressText = totalProgression?.let(ReadingProgressFormatter::percent) ?: totalProgressText,
+        chapterProgressText = chapterProgression?.let(ReadingProgressFormatter::percent) ?: chapterProgressText,
+    )
+
+fun ReaderUiState.afterReaderChapterOpened(
+    totalProgression: Double?,
+    chapterProgression: Double,
+): ReaderUiState =
+    copy(
+        // 切章反馈只更新底部进度；顶部 Chrome 仍然只允许由明确点击切换。
+        globalChromeVisible = false,
+        scrollInProgress = false,
+        scrollProgressVisible = true,
+        edgeMessage = null,
+        totalProgressText = totalProgression?.let(ReadingProgressFormatter::percent) ?: totalProgressText,
+        chapterProgressText = ReadingProgressFormatter.percent(chapterProgression),
+    )
+
+fun ReaderUiState.afterLocatorProgressChanged(
+    totalProgression: Double?,
+    chapterProgression: Double?,
+): ReaderUiState = this
 
 data class ReaderFontScaleChange(
     val preferences: org.readium.r2.navigator.epub.EpubPreferences,
@@ -105,53 +170,82 @@ class ReaderViewModel(
             updatedAt = System.currentTimeMillis(),
         )
         lastProgress = progress
-        _uiState.update {
-            it.copy(
-                totalProgressText = ReadingProgressFormatter.percent(totalProgression),
-                chapterProgressText = ReadingProgressFormatter.percent(chapterProgression),
-            )
-        }
+        _uiState.update { it.afterLocatorProgressChanged(totalProgression, chapterProgression) }
         if (saveNextLocatorImmediately) {
             saveNextLocatorImmediately = false
             saveProgressNow()
         } else {
             scheduleProgressSave()
         }
+        if (_uiState.value.shouldRefreshScrollProgressHideOnLocatorChanged) {
+            scheduleScrollProgressHide()
+        }
     }
 
     fun toggleChrome() {
         chromeAutoHideJob?.cancel()
-        _uiState.update {
-            it.copy(
-                globalChromeVisible = !it.globalChromeVisible,
-                scrollInProgress = false,
-                scrollProgressVisible = false,
-            )
-        }
+        _uiState.update { it.afterExplicitChromeTap() }
     }
 
     fun onScrollGestureStarted() {
         chromeAutoHideJob?.cancel()
-        _uiState.update { it.copy(scrollInProgress = true, scrollProgressVisible = true) }
+        _uiState.update { it.afterScrollStarted() }
     }
 
     fun onScrollGestureFinished() {
-        _uiState.update { state ->
-            state.copy(
-                scrollInProgress = false,
-                scrollProgressVisible = state.globalChromeVisible,
+        _uiState.update { it.afterScrollFinished() }
+        scheduleScrollProgressHide()
+    }
+
+    fun onReaderContentScrolled(
+        readingOrderIndex: Int,
+        chapterWeights: List<Int>,
+        scrollY: Int,
+        viewportHeightPx: Int,
+        contentHeightPx: Float,
+        nonScrollableProgression: Double? = 1.0,
+    ) {
+        val chapterProgression = ReaderScrollProgress.chapterProgression(
+            scrollY = scrollY,
+            viewportHeightPx = viewportHeightPx,
+            contentHeightPx = contentHeightPx,
+            nonScrollableProgression = nonScrollableProgression,
+        )
+        val totalProgression = ReaderScrollProgress.totalProgression(
+            chapterWeights = chapterWeights,
+            readingOrderIndex = readingOrderIndex,
+            chapterProgression = chapterProgression,
+        )
+        _uiState.update {
+            it.afterReaderContentScrolled(
+                totalProgression = totalProgression,
+                chapterProgression = chapterProgression,
             )
         }
-        if (!_uiState.value.globalChromeVisible) {
-            chromeAutoHideJob = viewModelScope.launch {
-                delay(SCROLL_PROGRESS_HIDE_DELAY_MS)
-                _uiState.update { it.copy(scrollProgressVisible = false) }
-            }
+        scheduleScrollProgressHide()
+    }
+
+    fun onReaderChapterOpened(
+        readingOrderIndex: Int,
+        chapterWeights: List<Int>,
+    ) {
+        val chapterProgression = ReaderScrollProgress.CHAPTER_START_PROGRESSION
+        val totalProgression = ReaderScrollProgress.chapterStartTotalProgression(
+            chapterWeights = chapterWeights,
+            readingOrderIndex = readingOrderIndex,
+        )
+        _uiState.update {
+            it.afterReaderChapterOpened(
+                totalProgression = totalProgression,
+                chapterProgression = chapterProgression,
+            )
         }
+        scheduleScrollProgressHide()
     }
 
     fun showChromeBriefly(message: String? = null) {
-        _uiState.update { it.copy(globalChromeVisible = true, edgeMessage = message) }
+        _uiState.update { it.afterTransientBottomChrome(message) }
+        scheduleScrollProgressHide()
         viewModelScope.launch {
             delay(1200)
             _uiState.update { state -> if (state.edgeMessage == message) state.copy(edgeMessage = null) else state }
@@ -208,6 +302,15 @@ class ReaderViewModel(
             withContext(Dispatchers.IO) {
                 bookRepository.saveProgress(progress.copy(updatedAt = System.currentTimeMillis()))
             }
+        }
+    }
+
+    private fun scheduleScrollProgressHide() {
+        chromeAutoHideJob?.cancel()
+        chromeAutoHideJob = viewModelScope.launch {
+            // 手指离开后 Readium 可能仍在惯性滚动；locator 持续更新会刷新这个倒计时。
+            delay(SCROLL_PROGRESS_HIDE_DELAY_MS)
+            _uiState.update { it.copy(scrollInProgress = false, scrollProgressVisible = false) }
         }
     }
 

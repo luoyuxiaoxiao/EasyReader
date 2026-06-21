@@ -19,6 +19,15 @@ class ChapterSwipeDetectorTest {
     }
 
     @Test
+    fun nearHorizontalSwipeSwitchesChapterWithoutDiagonalMovement() {
+        val next = detector.evaluate(startXPx = 540f, dxPx = -170f, dyPx = 8f, velocityXPxPerSecond = -900f)
+        val previous = detector.evaluate(startXPx = 540f, dxPx = 170f, dyPx = 8f, velocityXPxPerSecond = 900f)
+
+        assertEquals(ChapterSwipeDecision.NextChapter, next)
+        assertEquals(ChapterSwipeDecision.PreviousChapter, previous)
+    }
+
+    @Test
     fun verticalScrollNeverSwitchesChapter() {
         val event = detector.evaluate(startXPx = 540f, dxPx = 160f, dyPx = 420f, velocityXPxPerSecond = 900f)
         assertEquals(ChapterSwipeDecision.KeepReading, event)
