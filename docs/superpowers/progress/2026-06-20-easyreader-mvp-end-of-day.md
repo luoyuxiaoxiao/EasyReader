@@ -18,13 +18,22 @@
 
 ## Important Implementation Notes
 
-- The original plan listed Gradle `9.0.0` and `compileSdk = 35`, but the buildable implementation uses:
-  - Gradle wrapper `9.1.0`
+- The original plan listed Gradle `9.0.0` and `compileSdk = 35`, but the buildable implementation now uses:
+  - Gradle wrapper `9.2.0`
   - `compileSdk = 36`
   - `targetSdk = 35`
 - The app module does not explicitly apply `org.jetbrains.kotlin.android`; AGP 9 provides the Kotlin Android integration used by this build.
 - EPUB import currently uses a minimal ZIP/XML metadata and spine parser for MVP import bookkeeping. Readium is used by the reader service/session path.
 - Shortcut creation uses Android launcher confirmation; the app requests pinned shortcuts sequentially and records successful requests.
+
+## 2026-06-21 Environment Cleanup Note
+
+- EasyReader wrapper was aligned to Gradle `9.2.0`.
+- Global `~/.local/bin/gradle` was relinked to Gradle `9.2.0`.
+- Gradle `8.10.2` was intentionally kept in `~/.gradle/wrapper/dists` for the separate EasyNote project.
+- Bash and Fish shell configs now export `ANDROID_HOME` and `ANDROID_SDK_ROOT` as `/home/luoyu/Android/Sdk`, with Android `platform-tools` and `cmdline-tools/latest/bin` on PATH.
+- Main workspace Task 1 scaffold drafts were removed; the implementation remains in `.worktrees/easyreader-mvp`.
+- Verification after the Gradle change: `:app:testDebugUnitTest` and `:app:assembleDebug` both completed with `BUILD SUCCESSFUL` on Gradle `9.2.0`; a no-env Bash `:app:assembleDebug` also succeeded using the global Android SDK config.
 
 ## Verification Completed
 

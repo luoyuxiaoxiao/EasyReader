@@ -20,7 +20,7 @@ Not included yet: PDF support, cloud sync, accounts, notes, highlights, search, 
 - JDK 21.
 - Android SDK with platform 36 installed. The app currently targets SDK 35.
 - A connected Android device or emulator for instrumentation tests.
-- The checked-in Gradle wrapper. No global Gradle install is required.
+- The checked-in Gradle wrapper 9.2.0. No global Gradle install is required.
 
 ## Build
 
