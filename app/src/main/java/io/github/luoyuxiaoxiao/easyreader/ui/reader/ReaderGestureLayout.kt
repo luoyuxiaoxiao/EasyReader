@@ -51,7 +51,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 val dy = event.y - downY
                 val velocityX = dx / elapsedSeconds
                 if (!verticalLocked && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
-                    when (detector.evaluate(dx, dy, velocityX)) {
+                    when (detector.evaluate(downX, dx, dy, velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
                             onNextChapter()

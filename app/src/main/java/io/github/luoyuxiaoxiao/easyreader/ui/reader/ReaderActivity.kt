@@ -29,7 +29,9 @@ class ReaderActivity : FragmentActivity() {
     private var fragmentContainerId: Int = View.NO_ID
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // Readium 的 EpubNavigatorFragment 必须通过 navigatorFactory 创建，不能走系统 Fragment 状态恢复。
+        // 旋转屏幕后重新打开 session 并 attach navigator，避免 FragmentManager 用空构造函数恢复导致崩溃。
+        super.onCreate(null)
         val bookId = intent.getStringExtra(EXTRA_BOOK_ID)
         if (bookId == null) {
             finish()
@@ -94,7 +96,7 @@ class ReaderActivity : FragmentActivity() {
 
     private fun attachNavigator(session: io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSessionState) {
         supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
-            initialLocator = session.initialLocator,
+            initialLocator = viewModel.startLocatorFor(session),
             initialPreferences = session.initialPreferences,
         )
         supportFragmentManager.commitNow {

@@ -115,6 +115,9 @@ class ReaderViewModel(
         saveNextLocatorImmediately = true
     }
 
+    fun startLocatorFor(session: EpubReaderSessionState) =
+        ReaderStartLocator.select(lastProgress?.locatorJson, session.initialLocator)
+
     fun saveProgressNow() {
         progressSaveJob?.cancel()
         val progress = lastProgress ?: return
