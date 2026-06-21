@@ -3,6 +3,7 @@ package io.github.luoyuxiaoxiao.easyreader.ui.reader
 import android.content.Context
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
 import io.github.luoyuxiaoxiao.easyreader.reader.gesture.ChapterSwipeDecision
 import io.github.luoyuxiaoxiao.easyreader.reader.gesture.ChapterSwipeDetector
@@ -15,27 +16,50 @@ class ReaderGestureLayout @JvmOverloads constructor(
     var onNextChapter: () -> Unit = {}
     var onPreviousChapter: () -> Unit = {}
     var onVerticalScrollStarted: () -> Unit = {}
+    var onVerticalScrollFinished: () -> Unit = {}
+    var onFontScaleChanged: (Float) -> Unit = {}
+    var onFontScaleFinished: () -> Unit = {}
 
     private val detector = ChapterSwipeDetector(
         screenWidthPx = resources.displayMetrics.widthPixels.toFloat(),
         density = resources.displayMetrics.density,
     )
+    private val scaleDetector = ScaleGestureDetector(
+        context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                onFontScaleChanged(detector.scaleFactor)
+                return true
+            }
+        },
+    )
     private var downX = 0f
     private var downY = 0f
     private var downTime = 0L
     private var verticalLocked = false
+    private var scaling = false
     private var lastSwitchAt = 0L
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
                 downTime = event.eventTime
                 verticalLocked = false
+                scaling = false
+            }
+
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // 双指缩放期间不参与滚动锁定、点击和切章，避免阅读手势互相打架。
+                scaling = true
+                verticalLocked = false
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (scaling || event.pointerCount > 1) return super.dispatchTouchEvent(event)
                 val dx = event.x - downX
                 val dy = event.y - downY
                 // 状态流转：按下后先观察方向，纵向胜出就锁定阅读滚动，抬手时仅横向手势可切章。
@@ -50,7 +74,9 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 val dx = event.x - downX
                 val dy = event.y - downY
                 val velocityX = dx / elapsedSeconds
-                if (!verticalLocked && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
+                if (verticalLocked) {
+                    onVerticalScrollFinished()
+                } else if (!scaling && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
                     when (detector.evaluate(downX, dx, dy, velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
@@ -65,10 +91,17 @@ class ReaderGestureLayout @JvmOverloads constructor(
                         ChapterSwipeDecision.KeepReading -> Unit
                     }
                 }
+                if (scaling) onFontScaleFinished()
                 verticalLocked = false
+                scaling = false
             }
 
-            MotionEvent.ACTION_CANCEL -> verticalLocked = false
+            MotionEvent.ACTION_CANCEL -> {
+                if (verticalLocked) onVerticalScrollFinished()
+                if (scaling) onFontScaleFinished()
+                verticalLocked = false
+                scaling = false
+            }
         }
 
         return super.dispatchTouchEvent(event)

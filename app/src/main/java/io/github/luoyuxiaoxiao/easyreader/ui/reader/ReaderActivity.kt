@@ -72,7 +72,13 @@ class ReaderActivity : FragmentActivity() {
             )
         )
         root.setOnClickListener { viewModel.toggleChrome() }
-        root.onVerticalScrollStarted = viewModel::hideChromeForScroll
+        root.onVerticalScrollStarted = viewModel::onScrollGestureStarted
+        root.onVerticalScrollFinished = viewModel::onScrollGestureFinished
+        root.onFontScaleChanged = { scaleFactor ->
+            val change = viewModel.adjustFontScale(scaleFactor)
+            navigator?.submitPreferences(change.preferences)
+        }
+        root.onFontScaleFinished = viewModel::onFontScaleGestureFinished
         root.onNextChapter = { goToRelativeChapter(1) }
         root.onPreviousChapter = { goToRelativeChapter(-1) }
         setContentView(root)

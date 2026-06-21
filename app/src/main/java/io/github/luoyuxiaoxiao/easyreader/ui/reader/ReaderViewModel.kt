@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.luoyuxiaoxiao.easyreader.core.result.EasyReaderResult
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
+import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettings
 import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettingsStore
+import io.github.luoyuxiaoxiao.easyreader.data.settings.toEpubPreferences
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgress
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgressFormatter
 import io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSession
@@ -23,11 +25,28 @@ import kotlinx.coroutines.withContext
 
 data class ReaderUiState(
     val title: String = "EasyReader",
-    val chromeVisible: Boolean = false,
+    val globalChromeVisible: Boolean = false,
+    val scrollInProgress: Boolean = false,
+    val scrollProgressVisible: Boolean = false,
     val totalProgressText: String = "0.00%",
     val chapterProgressText: String = "0.00%",
+    val fontSizeOverlayText: String? = null,
     val edgeMessage: String? = null,
     val errorMessage: String? = null,
+) {
+    val topChromeVisible: Boolean
+        get() = globalChromeVisible && !scrollInProgress
+
+    val bottomChromeVisible: Boolean
+        get() = globalChromeVisible || scrollProgressVisible || edgeMessage != null
+
+    val fontSizeOverlayVisible: Boolean
+        get() = fontSizeOverlayText != null
+}
+
+data class ReaderFontScaleChange(
+    val preferences: org.readium.r2.navigator.epub.EpubPreferences,
+    val label: String,
 )
 
 class ReaderViewModel(
@@ -44,7 +63,11 @@ class ReaderViewModel(
     private var bookId: String? = null
     private var lastProgress: ReadingProgress? = null
     private var progressSaveJob: Job? = null
+    private var chromeAutoHideJob: Job? = null
+    private var fontOverlayHideJob: Job? = null
+    private var settingsSaveJob: Job? = null
     private var saveNextLocatorImmediately = false
+    private var readerSettings: ReaderSettings = ReaderSettings()
 
     fun load(bookId: String) {
         if (this.bookId == bookId && _sessionState.value != null) return
@@ -58,6 +81,7 @@ class ReaderViewModel(
             _uiState.update { it.copy(title = book.title, errorMessage = null) }
             val progress = withContext(Dispatchers.IO) { bookRepository.progress(bookId) }
             val settings = readerSettingsStore.settings.first()
+            readerSettings = settings
             when (val result = withContext(Dispatchers.IO) { readerSession.open(book, progress, settings) }) {
                 is EasyReaderResult.Success -> _sessionState.value = result.value
                 is EasyReaderResult.Failure -> _uiState.update { it.copy(errorMessage = result.message) }
@@ -96,18 +120,67 @@ class ReaderViewModel(
     }
 
     fun toggleChrome() {
-        _uiState.update { it.copy(chromeVisible = !it.chromeVisible) }
+        chromeAutoHideJob?.cancel()
+        _uiState.update {
+            it.copy(
+                globalChromeVisible = !it.globalChromeVisible,
+                scrollInProgress = false,
+                scrollProgressVisible = false,
+            )
+        }
     }
 
-    fun hideChromeForScroll() {
-        _uiState.update { it.copy(chromeVisible = false) }
+    fun onScrollGestureStarted() {
+        chromeAutoHideJob?.cancel()
+        _uiState.update { it.copy(scrollInProgress = true, scrollProgressVisible = true) }
+    }
+
+    fun onScrollGestureFinished() {
+        _uiState.update { state ->
+            state.copy(
+                scrollInProgress = false,
+                scrollProgressVisible = state.globalChromeVisible,
+            )
+        }
+        if (!_uiState.value.globalChromeVisible) {
+            chromeAutoHideJob = viewModelScope.launch {
+                delay(SCROLL_PROGRESS_HIDE_DELAY_MS)
+                _uiState.update { it.copy(scrollProgressVisible = false) }
+            }
+        }
     }
 
     fun showChromeBriefly(message: String? = null) {
-        _uiState.update { it.copy(chromeVisible = true, edgeMessage = message) }
+        _uiState.update { it.copy(globalChromeVisible = true, edgeMessage = message) }
         viewModelScope.launch {
             delay(1200)
             _uiState.update { state -> if (state.edgeMessage == message) state.copy(edgeMessage = null) else state }
+        }
+    }
+
+    fun adjustFontScale(gestureScaleFactor: Float): ReaderFontScaleChange {
+        fontOverlayHideJob?.cancel()
+        settingsSaveJob?.cancel()
+        val updatedScale = ReaderFontScale.adjust(readerSettings.fontScale, gestureScaleFactor)
+        readerSettings = readerSettings.copy(fontScale = updatedScale)
+        val label = ReaderFontScale.labelFor(updatedScale)
+        _uiState.update { it.copy(fontSizeOverlayText = label) }
+        return ReaderFontScaleChange(
+            preferences = readerSettings.toEpubPreferences(),
+            label = label,
+        )
+    }
+
+    fun onFontScaleGestureFinished() {
+        val settingsToSave = readerSettings
+        settingsSaveJob?.cancel()
+        settingsSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            readerSettingsStore.update(settingsToSave)
+        }
+        fontOverlayHideJob?.cancel()
+        fontOverlayHideJob = viewModelScope.launch {
+            delay(FONT_OVERLAY_HIDE_DELAY_MS)
+            _uiState.update { it.copy(fontSizeOverlayText = null) }
         }
     }
 
@@ -144,6 +217,9 @@ class ReaderViewModel(
     }
 
     companion object {
+        private const val SCROLL_PROGRESS_HIDE_DELAY_MS = 700L
+        private const val FONT_OVERLAY_HIDE_DELAY_MS = 800L
+
         fun factory(
             bookRepository: BookRepository,
             readerSettingsStore: ReaderSettingsStore,

@@ -17,7 +17,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+
+private val ReaderAccent = Color(0xFFFF8A00)
 
 @Composable
 fun ReaderChrome(
@@ -26,7 +30,7 @@ fun ReaderChrome(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
-        if (state.chromeVisible) {
+        if (state.topChromeVisible) {
             Surface(
                 tonalElevation = 2.dp,
                 modifier = Modifier
@@ -48,7 +52,9 @@ fun ReaderChrome(
                     )
                 }
             }
+        }
 
+        if (state.bottomChromeVisible) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -58,8 +64,16 @@ fun ReaderChrome(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(state.totalProgressText, style = MaterialTheme.typography.labelMedium)
-                Text(state.edgeMessage ?: state.chapterProgressText, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    state.totalProgressText,
+                    color = ReaderAccent,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                Text(
+                    state.edgeMessage ?: state.chapterProgressText,
+                    color = ReaderAccent,
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
 
@@ -67,6 +81,16 @@ fun ReaderChrome(
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+
+        state.fontSizeOverlayText?.let { text ->
+            Text(
+                text = text,
+                color = ReaderAccent,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
