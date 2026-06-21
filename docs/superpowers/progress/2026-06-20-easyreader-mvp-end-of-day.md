@@ -35,6 +35,13 @@
 - Main workspace Task 1 scaffold drafts were removed; the implementation remains in `.worktrees/easyreader-mvp`.
 - Verification after the Gradle change: `:app:testDebugUnitTest` and `:app:assembleDebug` both completed with `BUILD SUCCESSFUL` on Gradle `9.2.0`; a no-env Bash `:app:assembleDebug` also succeeded using the global Android SDK config.
 
+## 2026-06-21 PR and VS Code Note
+
+- Draft PR opened against `main`: `https://github.com/luoyuxiaoxiao/EasyReader/pull/1`.
+- VS Code project settings, recommended extensions, and Gradle tasks were added under `.vscode/`.
+- Verification after the VS Code configuration change: `.vscode/*.json` passed JSON validation, `:app:testDebugUnitTest` passed, and `:app:assembleDebug` passed.
+- Device and emulator acceptance checks remain deferred because no Android device or emulator is currently attached.
+
 ## Verification Completed
 
 These commands were run from the implementation worktree:

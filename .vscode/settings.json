@@ -1,0 +1,20 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.import.gradle.enabled": true,
+  "java.import.gradle.wrapper.enabled": true,
+  "java.jdt.ls.java.home": "/usr/lib/jvm/java-21-openjdk",
+  "gradle.java.home": "/usr/lib/jvm/java-21-openjdk",
+  "terminal.integrated.env.linux": {
+    "ANDROID_HOME": "/home/luoyu/Android/Sdk",
+    "ANDROID_SDK_ROOT": "/home/luoyu/Android/Sdk",
+    "JAVA_HOME": "/usr/lib/jvm/java-21-openjdk"
+  },
+  "files.exclude": {
+    "**/.gradle": true,
+    "**/build": true
+  },
+  "search.exclude": {
+    "**/.gradle": true,
+    "**/build": true
+  }
+}

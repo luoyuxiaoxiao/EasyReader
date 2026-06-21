@@ -48,6 +48,28 @@ Install the debug APK on a connected device:
 env GRADLE_USER_HOME=/tmp/easyreader-gradle-home JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANDROID_HOME=/home/luoyu/Android/Sdk ANDROID_SDK_ROOT=/home/luoyu/Android/Sdk ./gradlew :app:installDebug --no-daemon
 ```
 
+## VS Code
+
+Open the repository root in VS Code. The checked-in `.vscode` configuration sets JDK 21, Android SDK paths, Gradle wrapper import, and common tasks.
+
+Recommended extensions:
+
+- Extension Pack for Java, or at least `redhat.java`.
+- Gradle for Java: `vscjava.vscode-gradle`.
+- Kotlin Language: `fwcd.kotlin`.
+
+Common tasks are available through `Terminal > Run Task`:
+
+- `Gradle: assemble debug`
+- `Gradle: unit tests`
+- `Gradle: clean`
+- `Android: install debug`
+- `Android: instrumentation tests`
+
+The Android install and instrumentation tasks require a connected device or a running emulator.
+
+Android Studio is not required to edit or build this project. It is still useful for AVD Manager, Logcat, layout inspection, and SDK package management. If you prefer VS Code only, install the Android Emulator and a system image with `sdkmanager`, then create and start an AVD with `avdmanager` and `emulator`.
+
 ## First Run
 
 Start the app and import EPUB files with the in-app import button. Pinned shortcuts require launcher confirmation, so Android will ask before placing each selected book shortcut on the home screen.
