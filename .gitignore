@@ -36,6 +36,9 @@ captures/
 # Local implementation worktrees
 .worktrees/
 
+# Local Codex configuration
+.codex/
+
 # OS files
 .DS_Store
 Thumbs.db
