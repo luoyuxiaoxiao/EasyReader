@@ -106,6 +106,7 @@ jobs:
           SIGNED_APK="app/build/outputs/apk/release/EasyReader-${TAG}-release.apk"
           KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
           RELEASE_NOTES="$RUNNER_TEMP/release-notes.md"
+          REPO_RELEASE_NOTES="docs/releases/easyreader-${EXPECTED_VERSION}-release.md"
 
           VERSION_NAME="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n 1)"
           if [ "$VERSION_NAME" != "$EXPECTED_VERSION" ]; then
@@ -134,11 +135,22 @@ jobs:
 
           SHA256="$(sha256sum "$SIGNED_APK" | awk '{print $1}')"
           printf '%s  %s\n' "$SHA256" "$(basename "$SIGNED_APK")" > "$SIGNED_APK.sha256"
-          {
-            echo "Signed release APK attached."
-            echo
-            echo "SHA-256: $SHA256"
-          } > "$RELEASE_NOTES"
+          if [ -f "$REPO_RELEASE_NOTES" ]; then
+            cat "$REPO_RELEASE_NOTES" > "$RELEASE_NOTES"
+            {
+              echo
+              echo "## APK 校验"
+              echo
+              echo "- Signed release APK attached."
+              echo "- SHA-256: $SHA256"
+            } >> "$RELEASE_NOTES"
+          else
+            {
+              echo "Signed release APK attached."
+              echo
+              echo "SHA-256: $SHA256"
+            } > "$RELEASE_NOTES"
+          fi
 
           echo "apk_path=$SIGNED_APK" >> "$GITHUB_OUTPUT"
           echo "sha256_path=$SIGNED_APK.sha256" >> "$GITHUB_OUTPUT"

@@ -115,6 +115,33 @@ test_short_remote_flag_publishes_first_release_without_local_gradle() {
   git --git-dir="$origin" rev-parse -q --verify "refs/tags/v0.1.0" >/dev/null || fail "remote tag was not pushed"
 }
 
+test_remote_release_preserves_existing_release_doc() {
+  local tmp origin
+  tmp="$(mktemp -d)"
+  origin="$(mktemp -d)"
+  tmp_dirs+=("$tmp" "$origin")
+  make_fixture "$tmp" 1 0.1.0
+  add_bare_origin "$tmp" "$origin"
+
+  cat > "$tmp/docs/releases/easyreader-0.1.1-release.md" <<'DOC'
+# EasyReader 0.1.1 发布记录
+
+## 本次更新
+
+- 预写正文应保留。
+DOC
+  git -C "$tmp" add docs/releases/easyreader-0.1.1-release.md
+  git -C "$tmp" commit -q -m "docs: add release notes"
+
+  local output
+  output="$(cd "$tmp" && EASYREADERAPK_CONFIRM=yes bash "$script" -r 0.1.1)"
+
+  assert_contains "$output" "保留已有发布记录"
+  grep -q '预写正文应保留' "$tmp/docs/releases/easyreader-0.1.1-release.md" || fail "existing release doc was overwritten"
+  grep -q 'versionName = "0.1.1"' "$tmp/app/build.gradle.kts" || fail "versionName should update to 0.1.1"
+  git --git-dir="$origin" rev-parse -q --verify "refs/tags/v0.1.1" >/dev/null || fail "remote tag was not pushed"
+}
+
 test_dirty_worktree_is_rejected_for_real_release() {
   local tmp origin
   tmp="$(mktemp -d)"
@@ -155,5 +182,6 @@ test_future_version_increments_version_code
 test_invalid_version_is_rejected
 test_dirty_worktree_is_rejected_for_real_release
 test_short_remote_flag_publishes_first_release_without_local_gradle
+test_remote_release_preserves_existing_release_doc
 
 echo "EasyReaderAPK tests passed"

@@ -262,9 +262,14 @@ else
   ' "$gradle_file"
 fi
 
-info "写入发布记录"
+info "准备发布记录"
 mkdir -p "$(dirname "$release_doc")"
-cat > "$release_doc" <<DOC
+if [ -f "$release_doc" ]; then
+  # 允许发布前先维护正式 release notes，避免脚本覆盖 GitHub Release 正文。
+  info "保留已有发布记录: $release_doc"
+else
+  info "写入默认发布记录"
+  cat > "$release_doc" <<DOC
 # EasyReader $version 发布记录
 
 ## 发布信息
@@ -288,6 +293,7 @@ GitHub Release 会生成：
 - EasyReader-$tag-release.apk
 - EasyReader-$tag-release.apk.sha256
 DOC
+fi
 
 # 远端模式用于本机 Gradle 环境或依赖下载不稳定时，把最终编译、签名和校验交给 GitHub Actions。
 if [ "$remote_mode" = true ]; then
