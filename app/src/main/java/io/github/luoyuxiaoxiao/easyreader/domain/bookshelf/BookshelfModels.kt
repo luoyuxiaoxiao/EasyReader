@@ -9,9 +9,22 @@ data class BookshelfBook(
     val metadataSeriesIndex: Double?,
     val manualSeries: String?,
     val manualSeriesIndex: Double?,
+    val createdAt: Long,
     val lastOpenedAt: Long?,
     val updatedAt: Long,
     val totalProgression: Double?,
+)
+
+enum class BookshelfSortMode {
+    Recent,
+    Added,
+    Title,
+    Series,
+}
+
+data class BookshelfSettings(
+    val sortMode: BookshelfSortMode = BookshelfSortMode.Recent,
+    val sortAscending: Boolean = false,
 )
 
 sealed interface BookshelfEntry {
@@ -24,6 +37,7 @@ data class BookshelfSeries(
     val title: String,
     val books: List<BookshelfBook>,
     val progress: Double,
+    val sortKey: String? = null,
 )
 
 data class SeriesGroupingRule(

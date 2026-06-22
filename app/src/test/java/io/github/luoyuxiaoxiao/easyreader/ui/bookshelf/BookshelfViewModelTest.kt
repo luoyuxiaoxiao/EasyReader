@@ -3,6 +3,7 @@ package io.github.luoyuxiaoxiao.easyreader.ui.bookshelf
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
 import io.github.luoyuxiaoxiao.easyreader.domain.book.BookshelfBookSnapshot
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSortMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -20,6 +21,21 @@ class BookshelfViewModelTest {
         val series = entries.single() as BookshelfEntry.Series
         assertEquals("Fate", series.series.title)
         assertEquals(0.75, series.series.progress, 0.0001)
+    }
+
+    @Test
+    fun buildEntriesUsesRequestedSortMode() {
+        val entries = buildBookshelfEntries(
+            snapshots = listOf(
+                snapshot("z", "Zeta", 0.0),
+                snapshot("a", "Alpha", 0.0),
+            ),
+            customRules = emptyList(),
+            sortMode = BookshelfSortMode.Title,
+            sortAscending = true,
+        )
+
+        assertEquals(listOf("Alpha", "Zeta"), entries.map { (it as BookshelfEntry.SingleBook).book.title })
     }
 
     private fun snapshot(id: String, title: String, progress: Double) =

@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
                     epubImportService = appContainer.epubImportService,
                     shortcutInstaller = appContainer.shortcutInstaller,
                     seriesGroupingRuleStore = appContainer.seriesGroupingRuleStore,
+                    bookshelfSettingsStore = appContainer.bookshelfSettingsStore,
                 )
             )
             MaterialTheme {

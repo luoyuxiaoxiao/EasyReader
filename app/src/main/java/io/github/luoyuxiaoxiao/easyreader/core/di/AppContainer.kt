@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import io.github.luoyuxiaoxiao.easyreader.data.local.AppDatabase
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
+import io.github.luoyuxiaoxiao.easyreader.data.settings.BookshelfSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.data.settings.SeriesGroupingRuleStore
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
@@ -30,6 +31,10 @@ class AppContainer(context: Context) {
 
     val seriesGroupingRuleStore: SeriesGroupingRuleStore by lazy {
         SeriesGroupingRuleStore(applicationContext)
+    }
+
+    val bookshelfSettingsStore: BookshelfSettingsStore by lazy {
+        BookshelfSettingsStore(applicationContext)
     }
 
     val readiumServices: ReadiumServices by lazy {

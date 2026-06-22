@@ -6,6 +6,46 @@ import org.junit.Test
 
 class BookshelfGroupingTest {
     @Test
+    fun naturalSortOrdersMagicIndexPrefixes() {
+        val sorted = listOf("[S6_24.12.10]后记", "[S1_02]第二卷", "[S1_01]第一卷", "[S5_02_01]外传")
+            .sortedWith(NaturalSort.comparator())
+
+        assertEquals(listOf("[S1_01]第一卷", "[S1_02]第二卷", "[S5_02_01]外传", "[S6_24.12.10]后记"), sorted)
+    }
+
+    @Test
+    fun titleSortUsesNaturalOrderForSingleBooks() {
+        val entries = BookshelfGrouping.entries(
+            books = listOf(
+                book(id = "10", title = "Book 10", updatedAt = 300L),
+                book(id = "2", title = "Book 2", updatedAt = 200L),
+                book(id = "1", title = "Book 1", updatedAt = 100L),
+            ),
+            customRules = emptyList(),
+            disabledBuiltInRuleIds = BookshelfGrouping.builtInRules.map { it.id }.toSet(),
+            sortMode = BookshelfSortMode.Title,
+            sortAscending = true,
+        )
+
+        assertEquals(listOf("Book 1", "Book 2", "Book 10"), entries.map { (it as BookshelfEntry.SingleBook).book.title })
+    }
+
+    @Test
+    fun recentSortCanBeDescending() {
+        val entries = BookshelfGrouping.entries(
+            books = listOf(
+                book(id = "old", title = "Old", updatedAt = 100L),
+                book(id = "new", title = "New", updatedAt = 300L),
+            ),
+            customRules = emptyList(),
+            sortMode = BookshelfSortMode.Recent,
+            sortAscending = false,
+        )
+
+        assertEquals(listOf("New", "Old"), entries.map { (it as BookshelfEntry.SingleBook).book.title })
+    }
+
+    @Test
     fun manualSeriesOverridesMetadataAndRegex() {
         val books = listOf(
             book(id = "1", title = "Fate Vol.01", metadataSeries = "Fate", manualSeries = "手动 Fate"),
@@ -84,6 +124,8 @@ class BookshelfGroupingTest {
         title: String,
         metadataSeries: String? = null,
         manualSeries: String? = null,
+        createdAt: Long = 0L,
+        updatedAt: Long = 0L,
         totalProgression: Double? = null,
     ) = BookshelfBook(
         id = id,
@@ -94,8 +136,9 @@ class BookshelfGroupingTest {
         metadataSeriesIndex = null,
         manualSeries = manualSeries,
         manualSeriesIndex = null,
+        createdAt = createdAt,
         lastOpenedAt = null,
-        updatedAt = 0L,
+        updatedAt = updatedAt,
         totalProgression = totalProgression,
     )
 }

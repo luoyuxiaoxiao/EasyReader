@@ -40,6 +40,8 @@ object BookshelfGrouping {
         books: List<BookshelfBook>,
         customRules: List<SeriesGroupingRule>,
         disabledBuiltInRuleIds: Set<String> = emptySet(),
+        sortMode: BookshelfSortMode = BookshelfSortMode.Recent,
+        sortAscending: Boolean = false,
     ): List<BookshelfEntry> {
         val rules = customRules
             .filter { it.enabled }
@@ -61,19 +63,21 @@ object BookshelfGrouping {
                     ?: first.metadataSeries.cleanSeries()
                     ?: groupKeyFromRules(group, rules)
                 if (group.size >= 2 && key != null) {
+                    val sortedBooks = sortSeriesBooks(group, rules)
                     BookshelfEntry.Series(
                         BookshelfSeries(
                             id = key,
                             title = key,
-                            books = sortSeriesBooks(group, rules),
+                            books = sortedBooks,
                             progress = group.map { normalizeProgress(it.totalProgression) }.average(),
+                            sortKey = sortedBooks.firstOrNull()?.title,
                         )
                     )
                 } else {
                     BookshelfEntry.SingleBook(first, normalizeProgress(first.totalProgression))
                 }
             }
-            .sortedWith(compareBy({ entrySortTime(it) }, { entryTitle(it) }))
+            .let { entries -> sortEntries(entries, sortMode, sortAscending) }
     }
 
     fun normalizeProgress(value: Double?): Double {
@@ -87,14 +91,22 @@ object BookshelfGrouping {
         }
 
     private fun sortSeriesBooks(books: List<BookshelfBook>, rules: List<SeriesGroupingRule>): List<BookshelfBook> =
-        books.sortedWith(
-            compareBy<BookshelfBook> {
-                it.manualSeriesIndex
-                    ?: it.metadataSeriesIndex
-                    ?: rules.firstNotNullOfOrNull { rule -> matchSeries(rule, it.title)?.index }
-                    ?: Double.MAX_VALUE
-            }.thenBy { it.title }
-        )
+        books.sortedWith { left, right ->
+            val leftIndex = seriesIndex(left, rules)
+            val rightIndex = seriesIndex(right, rules)
+            val indexCompare = leftIndex.compareTo(rightIndex)
+            if (indexCompare != 0) {
+                indexCompare
+            } else {
+                NaturalSort.compare(left.title, right.title)
+            }
+        }
+
+    private fun seriesIndex(book: BookshelfBook, rules: List<SeriesGroupingRule>): Double =
+        book.manualSeriesIndex
+            ?: book.metadataSeriesIndex
+            ?: rules.firstNotNullOfOrNull { rule -> matchSeries(rule, book.title)?.index }
+            ?: Double.MAX_VALUE
 
     private fun matchSeries(rule: SeriesGroupingRule, title: String): RuleMatch? =
         runCatching {
@@ -105,14 +117,42 @@ object BookshelfGrouping {
             RuleMatch(series, index)
         }.getOrNull()
 
+    private fun sortEntries(
+        entries: List<BookshelfEntry>,
+        sortMode: BookshelfSortMode,
+        ascending: Boolean,
+    ): List<BookshelfEntry> {
+        // 顶层书架顺序由用户设置控制；系列内部顺序始终保持卷号/自然顺序，避免阅读路径被最近打开时间打乱。
+        val comparator = when (sortMode) {
+            BookshelfSortMode.Recent -> compareBy<BookshelfEntry> { entryRecentAt(it) }
+            BookshelfSortMode.Added -> compareBy { entryCreatedAt(it) }
+            BookshelfSortMode.Title -> Comparator { left, right -> NaturalSort.compare(entryTitle(left), entryTitle(right)) }
+            BookshelfSortMode.Series -> Comparator { left, right -> NaturalSort.compare(entrySeriesSortText(left), entrySeriesSortText(right)) }
+        }
+        val sorted = entries.sortedWith(comparator.thenBy { entryTitle(it) })
+        return if (ascending) sorted else sorted.reversed()
+    }
+
     private fun String?.cleanSeries(): String? =
         this?.trim()?.takeIf { it.isNotEmpty() }
 
-    private fun entrySortTime(entry: BookshelfEntry): Long =
+    private fun entryRecentAt(entry: BookshelfEntry): Long =
         when (entry) {
             is BookshelfEntry.Series -> entry.series.books.maxOf { it.lastOpenedAt ?: it.updatedAt }
             is BookshelfEntry.SingleBook -> entry.book.lastOpenedAt ?: entry.book.updatedAt
-        } * -1
+        }
+
+    private fun entryCreatedAt(entry: BookshelfEntry): Long =
+        when (entry) {
+            is BookshelfEntry.Series -> entry.series.books.minOf { it.createdAt }
+            is BookshelfEntry.SingleBook -> entry.book.createdAt
+        }
+
+    private fun entrySeriesSortText(entry: BookshelfEntry): String =
+        when (entry) {
+            is BookshelfEntry.Series -> entry.series.sortKey ?: entry.series.title
+            is BookshelfEntry.SingleBook -> entry.book.title
+        }
 
     private fun entryTitle(entry: BookshelfEntry): String =
         when (entry) {

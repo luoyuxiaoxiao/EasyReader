@@ -5,12 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
+import io.github.luoyuxiaoxiao.easyreader.data.settings.BookshelfSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.data.settings.SeriesGroupingRuleStore
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
 import io.github.luoyuxiaoxiao.easyreader.domain.book.BookshelfBookSnapshot
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfBook
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSortMode
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.RuleValidationResult
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
@@ -32,6 +34,8 @@ data class BookshelfUiState(
     val openedSeriesId: String? = null,
     val customRules: List<SeriesGroupingRule> = emptyList(),
     val disabledBuiltInRuleIds: Set<String> = emptySet(),
+    val sortMode: BookshelfSortMode = BookshelfSortMode.Recent,
+    val sortAscending: Boolean = false,
     val isImporting: Boolean = false,
     val message: String? = null,
 ) {
@@ -43,6 +47,7 @@ class BookshelfViewModel(
     private val epubImportService: EpubImportService,
     private val shortcutInstaller: ShortcutInstaller,
     private val seriesGroupingRuleStore: SeriesGroupingRuleStore,
+    private val bookshelfSettingsStore: BookshelfSettingsStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(BookshelfUiState())
     val uiState: StateFlow<BookshelfUiState> = _uiState.asStateFlow()
@@ -52,20 +57,25 @@ class BookshelfViewModel(
             combine(
                 bookRepository.observeBookshelfBooks(),
                 seriesGroupingRuleStore.settings,
-            ) { snapshots, settings ->
-                snapshots to settings
-            }.collect { (snapshots, settings) ->
+                bookshelfSettingsStore.settings,
+            ) { snapshots, groupingSettings, bookshelfSettings ->
+                Triple(snapshots, groupingSettings, bookshelfSettings)
+            }.collect { (snapshots, groupingSettings, bookshelfSettings) ->
                 _uiState.update { state ->
                     state.copy(
                         books = snapshots.map { it.book },
                         entries = buildBookshelfEntries(
                             snapshots = snapshots,
-                            customRules = settings.customRules,
-                            disabledBuiltInRuleIds = settings.disabledBuiltInRuleIds,
+                            customRules = groupingSettings.customRules,
+                            disabledBuiltInRuleIds = groupingSettings.disabledBuiltInRuleIds,
+                            sortMode = bookshelfSettings.sortMode,
+                            sortAscending = bookshelfSettings.sortAscending,
                         ),
                         booksById = snapshots.associate { it.book.id to it.book },
-                        customRules = settings.customRules,
-                        disabledBuiltInRuleIds = settings.disabledBuiltInRuleIds,
+                        customRules = groupingSettings.customRules,
+                        disabledBuiltInRuleIds = groupingSettings.disabledBuiltInRuleIds,
+                        sortMode = bookshelfSettings.sortMode,
+                        sortAscending = bookshelfSettings.sortAscending,
                     )
                 }
             }
@@ -175,6 +185,18 @@ class BookshelfViewModel(
         }
     }
 
+    fun setSortMode(mode: BookshelfSortMode) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookshelfSettingsStore.setSortMode(mode)
+        }
+    }
+
+    fun setSortAscending(ascending: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookshelfSettingsStore.setSortAscending(ascending)
+        }
+    }
+
     fun requestShortcutsForSelection() {
         val state = uiState.value
         val selectedBooks = state.selectedBookIds.mapNotNull { state.booksById[it] }
@@ -213,6 +235,7 @@ class BookshelfViewModel(
             epubImportService: EpubImportService,
             shortcutInstaller: ShortcutInstaller,
             seriesGroupingRuleStore: SeriesGroupingRuleStore,
+            bookshelfSettingsStore: BookshelfSettingsStore,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -222,6 +245,7 @@ class BookshelfViewModel(
                         epubImportService = epubImportService,
                         shortcutInstaller = shortcutInstaller,
                         seriesGroupingRuleStore = seriesGroupingRuleStore,
+                        bookshelfSettingsStore = bookshelfSettingsStore,
                     ) as T
             }
     }
@@ -231,6 +255,8 @@ internal fun buildBookshelfEntries(
     snapshots: List<BookshelfBookSnapshot>,
     customRules: List<SeriesGroupingRule>,
     disabledBuiltInRuleIds: Set<String> = emptySet(),
+    sortMode: BookshelfSortMode = BookshelfSortMode.Recent,
+    sortAscending: Boolean = false,
 ): List<BookshelfEntry> =
     // UI 只消费聚合后的书柜条目，标题正则和进度归一化都收敛在领域层。
     BookshelfGrouping.entries(
@@ -245,6 +271,7 @@ internal fun buildBookshelfEntries(
                 metadataSeriesIndex = book.metadataSeriesIndex,
                 manualSeries = book.manualSeries,
                 manualSeriesIndex = book.manualSeriesIndex,
+                createdAt = book.createdAt,
                 lastOpenedAt = book.lastOpenedAt,
                 updatedAt = book.updatedAt,
                 totalProgression = snapshot.totalProgression,
@@ -252,6 +279,8 @@ internal fun buildBookshelfEntries(
         },
         customRules = customRules,
         disabledBuiltInRuleIds = disabledBuiltInRuleIds,
+        sortMode = sortMode,
+        sortAscending = sortAscending,
     )
 
 internal fun BookshelfUiState.allBookshelfBooks(): List<BookshelfBook> =
