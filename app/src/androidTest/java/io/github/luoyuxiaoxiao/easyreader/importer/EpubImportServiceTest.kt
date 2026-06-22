@@ -1,5 +1,6 @@
 package io.github.luoyuxiaoxiao.easyreader.importer
 
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -7,9 +8,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.luoyuxiaoxiao.easyreader.data.local.AppDatabase
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
+import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubMetadataParser
 import io.github.luoyuxiaoxiao.easyreader.fixtures.MinimalEpubFixture
 import io.github.luoyuxiaoxiao.easyreader.fixtures.MinimalEpubOptions
 import java.io.File
+import java.util.zip.ZipFile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -76,6 +79,14 @@ class EpubImportServiceTest {
     @Test
     fun importsCoverImageAndStoresCoverPath() = runBlocking {
         val epub = writeFixture("cover.epub", MinimalEpubOptions(includeCover = true))
+        val parsed = EpubMetadataParser.parse(epub)
+        val parsedCover = requireNotNull(parsed.cover)
+        val decodedCover = ZipFile(epub).use { zip ->
+            val entry = requireNotNull(zip.getEntry(parsedCover.zipPath))
+            val bytes = zip.getInputStream(entry).use { it.readBytes() }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }
+        requireNotNull(decodedCover)
 
         service.importUris(listOf(Uri.fromFile(epub)))
 

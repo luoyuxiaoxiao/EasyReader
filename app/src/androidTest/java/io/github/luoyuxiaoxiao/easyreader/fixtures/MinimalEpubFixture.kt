@@ -1,7 +1,9 @@
 package io.github.luoyuxiaoxiao.easyreader.fixtures
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.Base64
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -98,7 +100,15 @@ object MinimalEpubFixture {
         closeEntry()
     }
 
-    private val tinyPng: ByteArray = Base64.getDecoder().decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
-    )
+    private val tinyPng: ByteArray by lazy {
+        // 使用 Android Bitmap 生成夹具封面，避免手写 PNG 字节被平台解码器拒绝。
+        val bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
+            setPixel(0, 0, Color.rgb(30, 165, 88))
+        }
+        ByteArrayOutputStream().use { output ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
+        }
+    }
 }

@@ -104,6 +104,6 @@ class EpubMetadataParserTest {
     }
 
     private val tinyPng: ByteArray = Base64.getDecoder().decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAFgwJ/lD0cWQAAAABJRU5ErkJggg=="
     )
 }
