@@ -107,7 +107,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 if (verticalLocked) {
                     onVerticalScrollFinished()
                 } else if (!scaling && !explicitTap && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
-                    when (chapterSwipeDecision(dx, maxAbsDy, velocityX)) {
+                    when (chapterSwipeDecision(netDx = dx, maxAbsDx = maxAbsDx, maxAbsDy = maxAbsDy, velocityX = velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
                             onNextChapter()
@@ -153,15 +153,26 @@ class ReaderGestureLayout @JvmOverloads constructor(
         return movement <= TAP_SLOP_DP * density && duration <= TAP_TIMEOUT_MS
     }
 
-    private fun chapterSwipeDecision(netDx: Float, maxAbsTravelY: Float, velocityX: Float): ChapterSwipeDecision {
+    private fun chapterSwipeDecision(
+        netDx: Float,
+        maxAbsDx: Float,
+        maxAbsDy: Float,
+        velocityX: Float,
+    ): ChapterSwipeDecision {
         val gestureWidth = width.takeIf { it > 0 }?.toFloat() ?: resources.displayMetrics.widthPixels.toFloat()
+        val effectiveDx =
+            when {
+                netDx < 0f -> -maxAbsDx
+                netDx > 0f -> maxAbsDx
+                else -> 0f
+            }
         return ChapterSwipeDetector(
             screenWidthPx = gestureWidth,
             density = density,
         ).evaluate(
             startXPx = downX,
-            dxPx = netDx,
-            dyPx = maxAbsTravelY,
+            dxPx = effectiveDx,
+            dyPx = maxAbsDy,
             velocityXPxPerSecond = velocityX,
         )
     }
