@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +21,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,13 +38,16 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +62,7 @@ import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfBook
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSeries
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -76,6 +83,11 @@ fun BookshelfScreen(
         onBookLongClick = viewModel::toggleSelection,
         onSeriesClick = viewModel::openSeries,
         onCloseSeries = viewModel::closeSeries,
+        onAssignSeries = viewModel::assignSelectedToSeries,
+        onRemoveFromSeries = viewModel::removeSelectedFromSeries,
+        onAddRule = viewModel::addCustomRule,
+        onSetBuiltInRuleEnabled = viewModel::setBuiltInRuleEnabled,
+        onSetCustomRuleEnabled = viewModel::setCustomRuleEnabled,
         onClearSelection = viewModel::clearSelection,
         onRequestShortcuts = viewModel::requestShortcutsForSelection,
         onMessageShown = viewModel::clearMessage,
@@ -92,6 +104,11 @@ private fun BookshelfContent(
     onBookLongClick: (String) -> Unit,
     onSeriesClick: (String) -> Unit,
     onCloseSeries: () -> Unit,
+    onAssignSeries: (String) -> Unit,
+    onRemoveFromSeries: () -> Unit,
+    onAddRule: (SeriesGroupingRule) -> Unit,
+    onSetBuiltInRuleEnabled: (String, Boolean) -> Unit,
+    onSetCustomRuleEnabled: (String, Boolean) -> Unit,
     onClearSelection: () -> Unit,
     onRequestShortcuts: () -> Unit,
     onMessageShown: () -> Unit,
@@ -105,6 +122,11 @@ private fun BookshelfContent(
     val openedSeries = state.entries
         .filterIsInstance<BookshelfEntry.Series>()
         .firstOrNull { it.series.id == state.openedSeriesId }
+    var showSeriesDialog by remember { mutableStateOf(false) }
+    var seriesName by remember { mutableStateOf("") }
+    var showRuleDialog by remember { mutableStateOf(false) }
+    var ruleName by remember { mutableStateOf("") }
+    var rulePattern by remember { mutableStateOf("") }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -132,6 +154,12 @@ private fun BookshelfContent(
                 },
                 actions = {
                     if (state.isSelecting) {
+                        TextButton(onClick = { showSeriesDialog = true }) {
+                            Text("加入系列")
+                        }
+                        TextButton(onClick = onRemoveFromSeries) {
+                            Text("移出系列")
+                        }
                         TextButton(onClick = onRequestShortcuts) {
                             Text("快捷方式")
                         }
@@ -139,6 +167,9 @@ private fun BookshelfContent(
                             Text("取消")
                         }
                     } else if (openedSeries == null) {
+                        TextButton(onClick = { showRuleDialog = true }) {
+                            Text("归组规则")
+                        }
                         Button(
                             onClick = {
                                 // 不同 DocumentsProvider 对 .epub 的 MIME 识别不一致，放宽选择器后由导入解析继续兜底。
@@ -193,6 +224,109 @@ private fun BookshelfContent(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             }
         }
+    }
+
+    if (showSeriesDialog) {
+        AlertDialog(
+            onDismissRequest = { showSeriesDialog = false },
+            title = { Text("加入系列") },
+            text = {
+                TextField(
+                    value = seriesName,
+                    onValueChange = { seriesName = it },
+                    label = { Text("系列名") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAssignSeries(seriesName)
+                        showSeriesDialog = false
+                    }
+                ) {
+                    Text("确认")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSeriesDialog = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showRuleDialog) {
+        AlertDialog(
+            onDismissRequest = { showRuleDialog = false },
+            title = { Text("系列归组规则") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    Text("内置规则", fontWeight = FontWeight.Medium)
+                    BookshelfGrouping.builtInRules.forEach { rule ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = rule.id !in state.disabledBuiltInRuleIds,
+                                onCheckedChange = { checked -> onSetBuiltInRuleEnabled(rule.id, checked) },
+                            )
+                            Text(rule.name)
+                        }
+                    }
+                    Text("自定义规则", fontWeight = FontWeight.Medium)
+                    if (state.customRules.isEmpty()) {
+                        Text("暂无自定义规则", style = MaterialTheme.typography.bodySmall)
+                    }
+                    state.customRules.forEach { rule ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = rule.enabled,
+                                onCheckedChange = { checked -> onSetCustomRuleEnabled(rule.id, checked) },
+                            )
+                            Text(rule.name)
+                        }
+                    }
+                    TextField(
+                        value = ruleName,
+                        onValueChange = { ruleName = it },
+                        label = { Text("名称") },
+                        singleLine = true,
+                    )
+                    TextField(
+                        value = rulePattern,
+                        onValueChange = { rulePattern = it },
+                        label = { Text("正则") },
+                    )
+                    Text(
+                        text = "需要命名捕获组：(?<series>...)，可选 (?<index>...)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    RulePreview(rulePattern, state.allBookshelfBooks())
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAddRule(
+                            SeriesGroupingRule(
+                                id = "custom-${System.currentTimeMillis()}",
+                                name = ruleName.ifBlank { "自定义规则" },
+                                pattern = rulePattern,
+                                enabled = true,
+                                priority = state.customRules.size,
+                                builtIn = false,
+                            )
+                        )
+                        showRuleDialog = false
+                    }
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRuleDialog = false }) { Text("关闭") }
+            },
+        )
     }
 }
 
@@ -395,6 +529,26 @@ private fun BookCoverBox(book: BookshelfBook, modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+@Composable
+private fun RulePreview(pattern: String, books: List<BookshelfBook>) {
+    val preview = remember(pattern, books) {
+        runCatching {
+            val rule = SeriesGroupingRule("preview", "预览", pattern, true, 0, false)
+            BookshelfGrouping.entries(
+                books = books,
+                customRules = listOf(rule),
+                disabledBuiltInRuleIds = BookshelfGrouping.builtInRules.map { it.id }.toSet(),
+            )
+                .filterIsInstance<BookshelfEntry.Series>()
+                .joinToString { "${it.series.title} (${it.series.books.size})" }
+        }.getOrDefault("")
+    }
+    Text(
+        text = if (preview.isBlank()) "暂无可折叠系列" else preview,
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 private fun entryKey(entry: BookshelfEntry): String =

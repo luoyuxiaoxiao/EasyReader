@@ -11,6 +11,7 @@ import io.github.luoyuxiaoxiao.easyreader.domain.book.BookshelfBookSnapshot
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfBook
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.RuleValidationResult
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
 import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutInstaller
@@ -118,6 +119,60 @@ class BookshelfViewModel(
 
     fun closeSeries() {
         _uiState.update { it.copy(openedSeriesId = null, selectedBookIds = emptySet()) }
+    }
+
+    fun assignSelectedToSeries(series: String) {
+        val selected = uiState.value.selectedBookIds
+        if (selected.isEmpty()) {
+            showMessage("请选择书籍")
+            return
+        }
+        val trimmed = series.trim()
+        if (trimmed.isEmpty()) {
+            showMessage("系列名不能为空")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.updateManualSeries(selected.toList(), trimmed, null)
+            _uiState.update { it.copy(selectedBookIds = emptySet(), message = "已加入系列：$trimmed") }
+        }
+    }
+
+    fun removeSelectedFromSeries() {
+        val selected = uiState.value.selectedBookIds
+        if (selected.isEmpty()) {
+            showMessage("请选择书籍")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.updateManualSeries(selected.toList(), null, null)
+            _uiState.update { it.copy(selectedBookIds = emptySet(), message = "已移出手动系列") }
+        }
+    }
+
+    fun addCustomRule(rule: SeriesGroupingRule) {
+        if (SeriesGroupingRule.validate(rule.pattern) !is RuleValidationResult.Valid) {
+            showMessage("正则需要包含 series 捕获组")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            seriesGroupingRuleStore.updateCustomRules(uiState.value.customRules + rule)
+        }
+    }
+
+    fun setBuiltInRuleEnabled(ruleId: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            seriesGroupingRuleStore.setBuiltInRuleEnabled(ruleId, enabled)
+        }
+    }
+
+    fun setCustomRuleEnabled(ruleId: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = uiState.value.customRules.map { rule ->
+                if (rule.id == ruleId) rule.copy(enabled = enabled) else rule
+            }
+            seriesGroupingRuleStore.updateCustomRules(updated)
+        }
     }
 
     fun requestShortcutsForSelection() {
