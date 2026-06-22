@@ -5,6 +5,7 @@ import androidx.room.Room
 import io.github.luoyuxiaoxiao.easyreader.data.local.AppDatabase
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
 import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettingsStore
+import io.github.luoyuxiaoxiao.easyreader.data.settings.SeriesGroupingRuleStore
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
 import io.github.luoyuxiaoxiao.easyreader.reader.readium.ReadiumServices
 import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutInstaller
@@ -24,6 +25,10 @@ class AppContainer(context: Context) {
 
     val readerSettingsStore: ReaderSettingsStore by lazy {
         ReaderSettingsStore(applicationContext)
+    }
+
+    val seriesGroupingRuleStore: SeriesGroupingRuleStore by lazy {
+        SeriesGroupingRuleStore(applicationContext)
     }
 
     val readiumServices: ReadiumServices by lazy {
