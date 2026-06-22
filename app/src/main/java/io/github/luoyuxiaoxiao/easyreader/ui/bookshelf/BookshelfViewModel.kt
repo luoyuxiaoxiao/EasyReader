@@ -5,20 +5,32 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
+import io.github.luoyuxiaoxiao.easyreader.data.settings.SeriesGroupingRuleStore
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
+import io.github.luoyuxiaoxiao.easyreader.domain.book.BookshelfBookSnapshot
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfBook
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
 import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutInstaller
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class BookshelfUiState(
     val books: List<Book> = emptyList(),
+    val entries: List<BookshelfEntry> = emptyList(),
+    val booksById: Map<String, Book> = emptyMap(),
     val selectedBookIds: Set<String> = emptySet(),
+    val openedSeriesId: String? = null,
+    val customRules: List<SeriesGroupingRule> = emptyList(),
+    val disabledBuiltInRuleIds: Set<String> = emptySet(),
     val isImporting: Boolean = false,
     val message: String? = null,
 ) {
@@ -29,14 +41,32 @@ class BookshelfViewModel(
     private val bookRepository: BookRepository,
     private val epubImportService: EpubImportService,
     private val shortcutInstaller: ShortcutInstaller,
+    private val seriesGroupingRuleStore: SeriesGroupingRuleStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(BookshelfUiState())
     val uiState: StateFlow<BookshelfUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
-            bookRepository.observeBooks().collect { books ->
-                _uiState.update { state -> state.copy(books = books) }
+            combine(
+                bookRepository.observeBookshelfBooks(),
+                seriesGroupingRuleStore.settings,
+            ) { snapshots, settings ->
+                snapshots to settings
+            }.collect { (snapshots, settings) ->
+                _uiState.update { state ->
+                    state.copy(
+                        books = snapshots.map { it.book },
+                        entries = buildBookshelfEntries(
+                            snapshots = snapshots,
+                            customRules = settings.customRules,
+                            disabledBuiltInRuleIds = settings.disabledBuiltInRuleIds,
+                        ),
+                        booksById = snapshots.associate { it.book.id to it.book },
+                        customRules = settings.customRules,
+                        disabledBuiltInRuleIds = settings.disabledBuiltInRuleIds,
+                    )
+                }
             }
         }
     }
@@ -82,9 +112,17 @@ class BookshelfViewModel(
         _uiState.update { it.copy(selectedBookIds = emptySet()) }
     }
 
+    fun openSeries(seriesId: String) {
+        _uiState.update { it.copy(openedSeriesId = seriesId, selectedBookIds = emptySet()) }
+    }
+
+    fun closeSeries() {
+        _uiState.update { it.copy(openedSeriesId = null, selectedBookIds = emptySet()) }
+    }
+
     fun requestShortcutsForSelection() {
         val state = uiState.value
-        val selectedBooks = state.books.filter { it.id in state.selectedBookIds }
+        val selectedBooks = state.selectedBookIds.mapNotNull { state.booksById[it] }
         if (selectedBooks.isEmpty()) {
             showMessage("请选择书籍")
             return
@@ -119,11 +157,52 @@ class BookshelfViewModel(
             bookRepository: BookRepository,
             epubImportService: EpubImportService,
             shortcutInstaller: ShortcutInstaller,
+            seriesGroupingRuleStore: SeriesGroupingRuleStore,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    BookshelfViewModel(bookRepository, epubImportService, shortcutInstaller) as T
+                    BookshelfViewModel(
+                        bookRepository = bookRepository,
+                        epubImportService = epubImportService,
+                        shortcutInstaller = shortcutInstaller,
+                        seriesGroupingRuleStore = seriesGroupingRuleStore,
+                    ) as T
             }
     }
 }
+
+internal fun buildBookshelfEntries(
+    snapshots: List<BookshelfBookSnapshot>,
+    customRules: List<SeriesGroupingRule>,
+    disabledBuiltInRuleIds: Set<String> = emptySet(),
+): List<BookshelfEntry> =
+    // UI 只消费聚合后的书柜条目，标题正则和进度归一化都收敛在领域层。
+    BookshelfGrouping.entries(
+        books = snapshots.map { snapshot ->
+            val book = snapshot.book
+            BookshelfBook(
+                id = book.id,
+                title = book.title,
+                author = book.author,
+                coverPath = book.coverPath,
+                metadataSeries = book.metadataSeries,
+                metadataSeriesIndex = book.metadataSeriesIndex,
+                manualSeries = book.manualSeries,
+                manualSeriesIndex = book.manualSeriesIndex,
+                lastOpenedAt = book.lastOpenedAt,
+                updatedAt = book.updatedAt,
+                totalProgression = snapshot.totalProgression,
+            )
+        },
+        customRules = customRules,
+        disabledBuiltInRuleIds = disabledBuiltInRuleIds,
+    )
+
+internal fun BookshelfUiState.allBookshelfBooks(): List<BookshelfBook> =
+    entries.flatMap { entry ->
+        when (entry) {
+            is BookshelfEntry.Series -> entry.series.books
+            is BookshelfEntry.SingleBook -> listOf(entry.book)
+        }
+    }
