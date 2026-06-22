@@ -147,8 +147,8 @@ class ReaderGestureLayout @JvmOverloads constructor(
         return super.dispatchTouchEvent(event)
     }
 
-    private fun isExplicitTap(event: MotionEvent, maxAbsTravelX: Float, maxAbsTravelY: Float): Boolean {
-        val movement = maxOf(maxAbsTravelX, maxAbsTravelY)
+    private fun isExplicitTap(event: MotionEvent, maxAbsDx: Float, maxAbsDy: Float): Boolean {
+        val movement = maxOf(maxAbsDx, maxAbsDy)
         val duration = event.eventTime - downTime
         return movement <= TAP_SLOP_DP * density && duration <= TAP_TIMEOUT_MS
     }
@@ -160,7 +160,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
         velocityX: Float,
     ): ChapterSwipeDecision {
         val gestureWidth = width.takeIf { it > 0 }?.toFloat() ?: resources.displayMetrics.widthPixels.toFloat()
-        val effectiveDx =
+        val signedMaxAbsDx =
             when {
                 netDx < 0f -> -maxAbsDx
                 netDx > 0f -> maxAbsDx
@@ -171,7 +171,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
             density = density,
         ).evaluate(
             startXPx = downX,
-            dxPx = effectiveDx,
+            dxPx = signedMaxAbsDx,
             dyPx = maxAbsDy,
             velocityXPxPerSecond = velocityX,
         )
