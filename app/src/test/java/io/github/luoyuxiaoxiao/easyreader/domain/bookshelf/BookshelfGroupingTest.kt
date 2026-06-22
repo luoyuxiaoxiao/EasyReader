@@ -46,6 +46,30 @@ class BookshelfGroupingTest {
     }
 
     @Test
+    fun simpleMagicPrefixRuleGroupsLargeSeriesAndSortsByPrefix() {
+        val rule = SeriesGroupingRule.magicPrefix(
+            id = "magic-index",
+            name = "魔禁大系列",
+            seriesName = "魔法禁书目录",
+            priority = 0,
+        )
+        val entries = BookshelfGrouping.entries(
+            books = listOf(
+                book(id = "s2", title = "[S2_01]新约 某魔法的禁书目录 01X"),
+                book(id = "s1", title = "[S1_01]某魔法的禁书目录 01X"),
+                book(id = "s5", title = "[S5_02_01]某科学的超电磁炮SS 学艺都市篇X"),
+            ),
+            customRules = listOf(rule),
+            sortMode = BookshelfSortMode.Series,
+            sortAscending = true,
+        )
+
+        val series = entries.single() as BookshelfEntry.Series
+        assertEquals("魔法禁书目录", series.series.title)
+        assertEquals(listOf("s1", "s2", "s5"), series.series.books.map { it.id })
+    }
+
+    @Test
     fun manualSeriesOverridesMetadataAndRegex() {
         val books = listOf(
             book(id = "1", title = "Fate Vol.01", metadataSeries = "Fate", manualSeries = "手动 Fate"),

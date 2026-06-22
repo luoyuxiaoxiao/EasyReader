@@ -40,6 +40,11 @@ data class BookshelfSeries(
     val sortKey: String? = null,
 )
 
+enum class SeriesGroupingRuleKind {
+    Regex,
+    MagicPrefix,
+}
+
 data class SeriesGroupingRule(
     val id: String,
     val name: String,
@@ -47,8 +52,34 @@ data class SeriesGroupingRule(
     val enabled: Boolean,
     val priority: Int,
     val builtIn: Boolean,
+    val kind: SeriesGroupingRuleKind = SeriesGroupingRuleKind.Regex,
+    val seriesOverride: String? = null,
 ) {
     companion object {
+        fun magicPrefix(id: String, name: String, seriesName: String, priority: Int): SeriesGroupingRule =
+            SeriesGroupingRule(
+                id = id,
+                name = name,
+                pattern = """^\[S[\d_.]+\]""",
+                enabled = true,
+                priority = priority,
+                builtIn = false,
+                kind = SeriesGroupingRuleKind.MagicPrefix,
+                seriesOverride = seriesName,
+            )
+
+        fun validate(rule: SeriesGroupingRule): RuleValidationResult =
+            when (rule.kind) {
+                SeriesGroupingRuleKind.MagicPrefix ->
+                    if (rule.seriesOverride.isNullOrBlank()) {
+                        RuleValidationResult.Invalid("大系列名不能为空")
+                    } else {
+                        RuleValidationResult.Valid
+                    }
+
+                SeriesGroupingRuleKind.Regex -> validate(rule.pattern)
+            }
+
         fun validate(pattern: String): RuleValidationResult =
             runCatching {
                 Regex(pattern)

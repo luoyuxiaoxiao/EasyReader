@@ -161,8 +161,9 @@ class BookshelfViewModel(
     }
 
     fun addCustomRule(rule: SeriesGroupingRule) {
-        if (SeriesGroupingRule.validate(rule.pattern) !is RuleValidationResult.Valid) {
-            showMessage("正则需要包含 series 捕获组")
+        val validation = SeriesGroupingRule.validate(rule)
+        if (validation is RuleValidationResult.Invalid) {
+            showMessage(validation.message)
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -182,6 +183,12 @@ class BookshelfViewModel(
                 if (rule.id == ruleId) rule.copy(enabled = enabled) else rule
             }
             seriesGroupingRuleStore.updateCustomRules(updated)
+        }
+    }
+
+    fun deleteCustomRule(ruleId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            seriesGroupingRuleStore.deleteCustomRule(ruleId)
         }
     }
 

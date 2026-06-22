@@ -30,6 +30,24 @@ class SeriesGroupingRuleStoreTest {
     }
 
     @Test
+    fun encodesAndDecodesMagicPrefixRule() {
+        val settings = SeriesGroupingRuleSettings(
+            customRules = listOf(
+                SeriesGroupingRule.magicPrefix(
+                    id = "magic-index",
+                    name = "魔禁大系列",
+                    seriesName = "魔法禁书目录",
+                    priority = 0,
+                )
+            )
+        )
+
+        val decoded = SeriesGroupingRuleSerializer.decode(SeriesGroupingRuleSerializer.encode(settings))
+
+        assertEquals(settings, decoded)
+    }
+
+    @Test
     fun invalidStoredJsonFallsBackToDefaultSettings() {
         val decoded = SeriesGroupingRuleSerializer.decode("{bad json")
 

@@ -92,23 +92,35 @@ object BookshelfGrouping {
 
     private fun sortSeriesBooks(books: List<BookshelfBook>, rules: List<SeriesGroupingRule>): List<BookshelfBook> =
         books.sortedWith { left, right ->
-            val leftIndex = seriesIndex(left, rules)
-            val rightIndex = seriesIndex(right, rules)
-            val indexCompare = leftIndex.compareTo(rightIndex)
+            val leftKey = seriesSortKey(left, rules)
+            val rightKey = seriesSortKey(right, rules)
+            val indexCompare = leftKey.index.compareTo(rightKey.index)
             if (indexCompare != 0) {
                 indexCompare
+            } else if (leftKey.sortText != null || rightKey.sortText != null) {
+                NaturalSort.compare(leftKey.sortText.orEmpty(), rightKey.sortText.orEmpty())
             } else {
                 NaturalSort.compare(left.title, right.title)
             }
         }
 
-    private fun seriesIndex(book: BookshelfBook, rules: List<SeriesGroupingRule>): Double =
-        book.manualSeriesIndex
-            ?: book.metadataSeriesIndex
-            ?: rules.firstNotNullOfOrNull { rule -> matchSeries(rule, book.title)?.index }
-            ?: Double.MAX_VALUE
+    private fun seriesSortKey(book: BookshelfBook, rules: List<SeriesGroupingRule>): SeriesBookSortKey {
+        val directIndex = book.manualSeriesIndex ?: book.metadataSeriesIndex
+        if (directIndex != null) return SeriesBookSortKey(index = directIndex, sortText = null)
+        val ruleMatch = rules.firstNotNullOfOrNull { rule -> matchSeries(rule, book.title) }
+        return SeriesBookSortKey(
+            index = ruleMatch?.index ?: Double.MAX_VALUE,
+            sortText = ruleMatch?.sortText,
+        )
+    }
 
     private fun matchSeries(rule: SeriesGroupingRule, title: String): RuleMatch? =
+        when (rule.kind) {
+            SeriesGroupingRuleKind.MagicPrefix -> matchMagicPrefix(rule, title)
+            SeriesGroupingRuleKind.Regex -> matchRegex(rule, title)
+        }
+
+    private fun matchRegex(rule: SeriesGroupingRule, title: String): RuleMatch? =
         runCatching {
             val match = Regex(rule.pattern).find(title) ?: return null
             val groups = match.groups
@@ -116,6 +128,13 @@ object BookshelfGrouping {
             val index = groups["index"]?.value?.toDoubleOrNull()
             RuleMatch(series, index)
         }.getOrNull()
+
+    private fun matchMagicPrefix(rule: SeriesGroupingRule, title: String): RuleMatch? {
+        val series = rule.seriesOverride.cleanSeries() ?: return null
+        // [S...] 前缀只用于自动归大系列和排序，小系列仍由手动整理覆盖。
+        val prefix = Regex("""^\[S([\d_.]+)\]""").find(title)?.groupValues?.getOrNull(1) ?: return null
+        return RuleMatch(series = series, sortText = prefix)
+    }
 
     private fun sortEntries(
         entries: List<BookshelfEntry>,
@@ -160,7 +179,9 @@ object BookshelfGrouping {
             is BookshelfEntry.SingleBook -> entry.book.title
         }
 
-    private data class RuleMatch(val series: String, val index: Double?)
+    private data class RuleMatch(val series: String, val index: Double? = null, val sortText: String? = null)
+
+    private data class SeriesBookSortKey(val index: Double, val sortText: String?)
 
     private const val SINGLE_PREFIX = "single:"
 }

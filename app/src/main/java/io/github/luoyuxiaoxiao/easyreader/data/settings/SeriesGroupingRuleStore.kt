@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRuleKind
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRuleSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -45,6 +46,11 @@ class SeriesGroupingRuleStore(context: Context) {
         updateSettings(current.copy(disabledBuiltInRuleIds = disabled))
     }
 
+    suspend fun deleteCustomRule(ruleId: String) {
+        val current = settings.first()
+        updateSettings(current.copy(customRules = current.customRules.filterNot { it.id == ruleId }))
+    }
+
     private companion object {
         val SETTINGS_JSON = stringPreferencesKey("settings_json")
     }
@@ -82,6 +88,8 @@ private data class StoredSeriesGroupingRule(
     val enabled: Boolean,
     val priority: Int,
     val builtIn: Boolean,
+    val kind: SeriesGroupingRuleKind = SeriesGroupingRuleKind.Regex,
+    val seriesOverride: String? = null,
 )
 
 private fun SeriesGroupingRuleSettings.toStored(): StoredSeriesGroupingRuleSettings =
@@ -97,7 +105,7 @@ private fun StoredSeriesGroupingRuleSettings.toDomain(): SeriesGroupingRuleSetti
     )
 
 private fun SeriesGroupingRule.toStored(): StoredSeriesGroupingRule =
-    StoredSeriesGroupingRule(id, name, pattern, enabled, priority, builtIn)
+    StoredSeriesGroupingRule(id, name, pattern, enabled, priority, builtIn, kind, seriesOverride)
 
 private fun StoredSeriesGroupingRule.toDomain(): SeriesGroupingRule =
-    SeriesGroupingRule(id, name, pattern, enabled, priority, builtIn)
+    SeriesGroupingRule(id, name, pattern, enabled, priority, builtIn, kind, seriesOverride)
