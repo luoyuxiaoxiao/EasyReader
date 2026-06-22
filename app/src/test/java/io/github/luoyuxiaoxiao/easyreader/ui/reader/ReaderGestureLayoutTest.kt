@@ -73,8 +73,8 @@ class ReaderGestureLayoutTest {
         layout.onNextChapter = { nextChapters++ }
 
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 700f, y = 900f, eventTime = 0L))
-        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 610f, y = 904f, eventTime = 120L))
-        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 520f, y = 906f, eventTime = 240L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 580f, y = 904f, eventTime = 120L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 460f, y = 906f, eventTime = 240L))
 
         assertEquals(0, taps)
         assertEquals(1, nextChapters)
