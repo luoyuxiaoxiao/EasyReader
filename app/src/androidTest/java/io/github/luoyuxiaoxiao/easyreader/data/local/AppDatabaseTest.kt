@@ -124,4 +124,41 @@ class AppDatabaseTest {
         assertEquals("Manual Series", snapshot.manualSeries)
         assertEquals(0.5, snapshot.totalProgression!!, 0.0001)
     }
+
+    @Test
+    fun deletingBookCascadesBookGraph() = runBlocking {
+        val book = BookEntity(
+            id = "book-delete",
+            title = "Delete Me",
+            author = null,
+            filePath = "/books/book-delete/book.epub",
+            sha256 = "hash-delete",
+            coverPath = null,
+            metadataSeries = null,
+            metadataSeriesIndex = null,
+            manualSeries = null,
+            manualSeriesIndex = null,
+            createdAt = 100L,
+            updatedAt = 200L,
+            lastOpenedAt = null,
+        )
+        database.bookDao().upsert(book)
+        database.chapterDao().replaceChapters(
+            book.id,
+            listOf(ChapterEntity("chapter", book.id, 0, "chapter.xhtml", "Chapter", true))
+        )
+        database.readingProgressDao().upsert(
+            ReadingProgressEntity(book.id, "{}", 0, 0.5, 0.5, 300L)
+        )
+        database.shortcutDao().upsert(
+            ShortcutEntity(book.id, "shortcut", 400L, 500L)
+        )
+
+        database.bookDao().deleteByIds(listOf(book.id))
+
+        assertEquals(null, database.bookDao().findById(book.id))
+        assertEquals(emptyList<ChapterEntity>(), database.chapterDao().findByBookId(book.id))
+        assertEquals(null, database.readingProgressDao().find(book.id))
+        assertEquals(null, database.shortcutDao().find(book.id))
+    }
 }

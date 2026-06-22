@@ -160,6 +160,24 @@ class BookshelfViewModel(
         }
     }
 
+    fun deleteSelectedBooks() {
+        val selected = uiState.value.selectedBookIds
+        if (selected.isEmpty()) {
+            showMessage("请选择书籍")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.deleteBooks(selected.toList())
+            _uiState.update {
+                it.copy(
+                    selectedBookIds = emptySet(),
+                    openedSeriesId = null,
+                    message = "已删除 ${selected.size} 本书",
+                )
+            }
+        }
+    }
+
     fun addCustomRule(rule: SeriesGroupingRule) {
         val validation = SeriesGroupingRule.validate(rule)
         if (validation is RuleValidationResult.Invalid) {

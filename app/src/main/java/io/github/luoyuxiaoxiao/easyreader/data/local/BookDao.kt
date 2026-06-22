@@ -34,6 +34,9 @@ interface BookDao {
 
     @Query("UPDATE books SET manualSeries = :series, manualSeriesIndex = :seriesIndex, updatedAt = :updatedAt WHERE id IN (:bookIds)")
     suspend fun updateManualSeries(bookIds: List<String>, series: String?, seriesIndex: Double?, updatedAt: Long)
+
+    @Query("DELETE FROM books WHERE id IN (:bookIds)")
+    suspend fun deleteByIds(bookIds: List<String>)
 }
 
 @Dao

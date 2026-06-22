@@ -5,6 +5,7 @@ import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
 import io.github.luoyuxiaoxiao.easyreader.domain.book.BookshelfBookSnapshot
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Chapter
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgress
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -55,6 +56,15 @@ class BookRepository(
         bookDao.updateManualSeries(bookIds, series, seriesIndex, System.currentTimeMillis())
     }
 
+    suspend fun deleteBooks(bookIds: List<String>) {
+        if (bookIds.isEmpty()) return
+        val books = bookIds.mapNotNull { bookDao.findById(it)?.toDomain() }
+        database.withTransaction {
+            bookDao.deleteByIds(bookIds)
+        }
+        books.forEach { book -> deleteImportedFiles(book) }
+    }
+
     suspend fun recordShortcut(bookId: String, shortcutId: String, now: Long) {
         shortcutDao.upsert(
             ShortcutEntity(
@@ -64,6 +74,15 @@ class BookRepository(
                 lastRequestedAt = now,
             )
         )
+    }
+
+    private fun deleteImportedFiles(book: Book) {
+        val epubFile = File(book.filePath)
+        val directory = epubFile.parentFile
+        // 只清理应用私有导入目录，避免误删用户下载目录里的原始 EPUB。
+        if (epubFile.name == "book.epub" && directory?.name == book.id) {
+            directory.deleteRecursively()
+        }
     }
 }
 
