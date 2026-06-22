@@ -1,6 +1,7 @@
 package io.github.luoyuxiaoxiao.easyreader.ui.bookshelf
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -30,6 +31,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +65,7 @@ import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfBook
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSeries
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSortMode
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,7 +92,11 @@ fun BookshelfScreen(
         onAddRule = viewModel::addCustomRule,
         onSetBuiltInRuleEnabled = viewModel::setBuiltInRuleEnabled,
         onSetCustomRuleEnabled = viewModel::setCustomRuleEnabled,
+        onDeleteCustomRule = viewModel::deleteCustomRule,
+        onSetSortMode = viewModel::setSortMode,
+        onSetSortAscending = viewModel::setSortAscending,
         onClearSelection = viewModel::clearSelection,
+        onDeleteSelectedBooks = viewModel::deleteSelectedBooks,
         onRequestShortcuts = viewModel::requestShortcutsForSelection,
         onMessageShown = viewModel::clearMessage,
         modifier = modifier,
@@ -109,7 +117,11 @@ private fun BookshelfContent(
     onAddRule: (SeriesGroupingRule) -> Unit,
     onSetBuiltInRuleEnabled: (String, Boolean) -> Unit,
     onSetCustomRuleEnabled: (String, Boolean) -> Unit,
+    onDeleteCustomRule: (String) -> Unit,
+    onSetSortMode: (BookshelfSortMode) -> Unit,
+    onSetSortAscending: (Boolean) -> Unit,
     onClearSelection: () -> Unit,
+    onDeleteSelectedBooks: () -> Unit,
     onRequestShortcuts: () -> Unit,
     onMessageShown: () -> Unit,
     modifier: Modifier = Modifier,
@@ -125,8 +137,32 @@ private fun BookshelfContent(
     var showSeriesDialog by remember { mutableStateOf(false) }
     var seriesName by remember { mutableStateOf("") }
     var showRuleDialog by remember { mutableStateOf(false) }
+    var showOrganizeMenu by remember { mutableStateOf(false) }
+    var showDeleteBooksDialog by remember { mutableStateOf(false) }
+    var ruleToDelete by remember { mutableStateOf<SeriesGroupingRule?>(null) }
     var ruleName by remember { mutableStateOf("") }
     var rulePattern by remember { mutableStateOf("") }
+    var simpleSeriesName by remember { mutableStateOf("") }
+
+    BackHandler(
+        enabled = showDeleteBooksDialog ||
+            ruleToDelete != null ||
+            showRuleDialog ||
+            showSeriesDialog ||
+            showOrganizeMenu ||
+            state.isSelecting ||
+            openedSeries != null,
+    ) {
+        when {
+            showDeleteBooksDialog -> showDeleteBooksDialog = false
+            ruleToDelete != null -> ruleToDelete = null
+            showRuleDialog -> showRuleDialog = false
+            showSeriesDialog -> showSeriesDialog = false
+            showOrganizeMenu -> showOrganizeMenu = false
+            state.isSelecting -> onClearSelection()
+            openedSeries != null -> onCloseSeries()
+        }
+    }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -163,12 +199,52 @@ private fun BookshelfContent(
                         TextButton(onClick = onRequestShortcuts) {
                             Text("快捷方式")
                         }
+                        TextButton(onClick = { showDeleteBooksDialog = true }) {
+                            Text("删除")
+                        }
                         TextButton(onClick = onClearSelection) {
                             Text("取消")
                         }
                     } else if (openedSeries == null) {
-                        TextButton(onClick = { showRuleDialog = true }) {
-                            Text("归组规则")
+                        Box {
+                            TextButton(onClick = { showOrganizeMenu = true }) {
+                                Text("整理")
+                            }
+                            DropdownMenu(
+                                expanded = showOrganizeMenu,
+                                onDismissRequest = { showOrganizeMenu = false },
+                            ) {
+                                Text(
+                                    text = "排序方式",
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                                BookshelfSortMode.values().forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(sortModeLabel(mode) + if (state.sortMode == mode) " (当前)" else "")
+                                        },
+                                        onClick = {
+                                            onSetSortMode(mode)
+                                            showOrganizeMenu = false
+                                        },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(if (state.sortAscending) "切换为降序" else "切换为升序") },
+                                    onClick = {
+                                        onSetSortAscending(!state.sortAscending)
+                                        showOrganizeMenu = false
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("自动归组规则") },
+                                    onClick = {
+                                        showRuleDialog = true
+                                        showOrganizeMenu = false
+                                    },
+                                )
+                            }
                         }
                         Button(
                             onClick = {
@@ -254,6 +330,27 @@ private fun BookshelfContent(
         )
     }
 
+    if (showDeleteBooksDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteBooksDialog = false },
+            title = { Text("删除图书") },
+            text = { Text("将从 EasyReader 删除已选 ${state.selectedBookIds.size} 本书。手机下载目录中的原始 EPUB 不会被删除。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteSelectedBooks()
+                        showDeleteBooksDialog = false
+                    }
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteBooksDialog = false }) { Text("取消") }
+            },
+        )
+    }
+
     if (showRuleDialog) {
         AlertDialog(
             onDismissRequest = { showRuleDialog = false },
@@ -278,14 +375,36 @@ private fun BookshelfContent(
                         Text("暂无自定义规则", style = MaterialTheme.typography.bodySmall)
                     }
                     state.customRules.forEach { rule ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             Checkbox(
                                 checked = rule.enabled,
                                 onCheckedChange = { checked -> onSetCustomRuleEnabled(rule.id, checked) },
                             )
-                            Text(rule.name)
+                            Text(
+                                text = rule.name,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { ruleToDelete = rule }) {
+                                Text("删除")
+                            }
                         }
                     }
+                    Text("简单规则", fontWeight = FontWeight.Medium)
+                    TextField(
+                        value = simpleSeriesName,
+                        onValueChange = { simpleSeriesName = it },
+                        label = { Text("大系列名") },
+                        singleLine = true,
+                    )
+                    Text(
+                        text = "用于 [S1_01]、[S5_02_01] 这类前缀，自动归为同一个大系列。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    SimpleRulePreview(simpleSeriesName, state.allBookshelfBooks())
+                    Text("高级正则", fontWeight = FontWeight.Medium)
                     TextField(
                         value = ruleName,
                         onValueChange = { ruleName = it },
@@ -307,7 +426,15 @@ private fun BookshelfContent(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onAddRule(
+                        val simpleName = simpleSeriesName.trim()
+                        val rule = if (simpleName.isNotEmpty()) {
+                            SeriesGroupingRule.magicPrefix(
+                                id = "custom-${System.currentTimeMillis()}",
+                                name = ruleName.ifBlank { "$simpleName [S编号]" },
+                                seriesName = simpleName,
+                                priority = state.customRules.size,
+                            )
+                        } else {
                             SeriesGroupingRule(
                                 id = "custom-${System.currentTimeMillis()}",
                                 name = ruleName.ifBlank { "自定义规则" },
@@ -316,8 +443,12 @@ private fun BookshelfContent(
                                 priority = state.customRules.size,
                                 builtIn = false,
                             )
-                        )
+                        }
+                        onAddRule(rule)
                         showRuleDialog = false
+                        ruleName = ""
+                        rulePattern = ""
+                        simpleSeriesName = ""
                     }
                 ) {
                     Text("保存")
@@ -325,6 +456,27 @@ private fun BookshelfContent(
             },
             dismissButton = {
                 TextButton(onClick = { showRuleDialog = false }) { Text("关闭") }
+            },
+        )
+    }
+
+    ruleToDelete?.let { rule ->
+        AlertDialog(
+            onDismissRequest = { ruleToDelete = null },
+            title = { Text("删除规则") },
+            text = { Text("删除自定义规则：${rule.name}") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteCustomRule(rule.id)
+                        ruleToDelete = null
+                    }
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { ruleToDelete = null }) { Text("取消") }
             },
         )
     }
@@ -421,7 +573,7 @@ private fun BookGridItem(
             color = BookshelfProgressGreen,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(5.dp)
+                .height(8.dp)
                 .padding(top = 4.dp),
         )
         Text(
@@ -484,7 +636,7 @@ private fun SeriesStackItem(series: BookshelfSeries, onClick: () -> Unit) {
             color = BookshelfProgressGreen,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(5.dp),
+                .height(8.dp),
         )
         Text(
             text = series.title,
@@ -532,6 +684,29 @@ private fun BookCoverBox(book: BookshelfBook, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun SimpleRulePreview(seriesName: String, books: List<BookshelfBook>) {
+    val preview = remember(seriesName, books) {
+        val trimmed = seriesName.trim()
+        if (trimmed.isEmpty()) {
+            ""
+        } else {
+            val rule = SeriesGroupingRule.magicPrefix("preview", "预览", trimmed, 0)
+            BookshelfGrouping.entries(
+                books = books,
+                customRules = listOf(rule),
+                disabledBuiltInRuleIds = BookshelfGrouping.builtInRules.map { it.id }.toSet(),
+            )
+                .filterIsInstance<BookshelfEntry.Series>()
+                .joinToString { "${it.series.title} (${it.series.books.size})" }
+        }
+    }
+    Text(
+        text = if (preview.isBlank()) "暂无可折叠系列" else preview,
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+@Composable
 private fun RulePreview(pattern: String, books: List<BookshelfBook>) {
     val preview = remember(pattern, books) {
         runCatching {
@@ -555,6 +730,14 @@ private fun entryKey(entry: BookshelfEntry): String =
     when (entry) {
         is BookshelfEntry.Series -> "series:${entry.series.id}"
         is BookshelfEntry.SingleBook -> "book:${entry.book.id}"
+    }
+
+private fun sortModeLabel(mode: BookshelfSortMode): String =
+    when (mode) {
+        BookshelfSortMode.Recent -> "最近阅读"
+        BookshelfSortMode.Added -> "添加日期"
+        BookshelfSortMode.Title -> "标题"
+        BookshelfSortMode.Series -> "系列顺序"
     }
 
 private val BookshelfProgressGreen = Color(0xFF18A558)
