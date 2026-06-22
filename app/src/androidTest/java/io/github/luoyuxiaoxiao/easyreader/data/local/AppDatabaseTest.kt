@@ -37,6 +37,10 @@ class AppDatabaseTest {
             filePath = "/books/book-1/book.epub",
             sha256 = "hash-1",
             coverPath = null,
+            metadataSeries = null,
+            metadataSeriesIndex = null,
+            manualSeries = null,
+            manualSeriesIndex = null,
             createdAt = 100L,
             updatedAt = 200L,
             lastOpenedAt = null,
@@ -85,5 +89,39 @@ class AppDatabaseTest {
         assertEquals(chapters, database.chapterDao().findByBookId(book.id))
         assertEquals(progress, database.readingProgressDao().find(book.id))
         assertEquals(shortcut, database.shortcutDao().find(book.id))
+    }
+
+    @Test
+    fun observesBookshelfBooksWithManualSeriesAndProgress() = runBlocking {
+        val book = BookEntity(
+            id = "book-series-1",
+            title = "Series Vol.01",
+            author = "Author",
+            filePath = "/books/book-series-1/book.epub",
+            sha256 = "hash-series-1",
+            coverPath = "/books/book-series-1/cover.jpg",
+            metadataSeries = "Series",
+            metadataSeriesIndex = 1.0,
+            manualSeries = "Manual Series",
+            manualSeriesIndex = 2.0,
+            createdAt = 100L,
+            updatedAt = 200L,
+            lastOpenedAt = null,
+        )
+        val progress = ReadingProgressEntity(
+            bookId = book.id,
+            locatorJson = """{"href":"chapter.xhtml"}""",
+            readingOrderIndex = 0,
+            totalProgression = 0.5,
+            chapterProgression = 0.5,
+            updatedAt = 300L,
+        )
+
+        database.bookDao().upsert(book)
+        database.readingProgressDao().upsert(progress)
+
+        val snapshot = database.bookDao().observeBookshelfBooks().first().single()
+        assertEquals("Manual Series", snapshot.manualSeries)
+        assertEquals(0.5, snapshot.totalProgression!!, 0.0001)
     }
 }

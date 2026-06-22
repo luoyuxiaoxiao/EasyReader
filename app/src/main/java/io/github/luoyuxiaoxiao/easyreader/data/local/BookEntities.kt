@@ -13,9 +13,30 @@ data class BookEntity(
     val filePath: String,
     val sha256: String,
     val coverPath: String?,
+    val metadataSeries: String?,
+    val metadataSeriesIndex: Double?,
+    val manualSeries: String?,
+    val manualSeriesIndex: Double?,
     val createdAt: Long,
     val updatedAt: Long,
     val lastOpenedAt: Long?,
+)
+
+data class BookshelfBookProjection(
+    val id: String,
+    val title: String,
+    val author: String?,
+    val filePath: String,
+    val sha256: String,
+    val coverPath: String?,
+    val metadataSeries: String?,
+    val metadataSeriesIndex: Double?,
+    val manualSeries: String?,
+    val manualSeriesIndex: Double?,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val lastOpenedAt: Long?,
+    val totalProgression: Double?,
 )
 
 @Entity(

@@ -7,9 +7,18 @@ data class Book(
     val filePath: String,
     val sha256: String,
     val coverPath: String?,
+    val metadataSeries: String?,
+    val metadataSeriesIndex: Double?,
+    val manualSeries: String?,
+    val manualSeriesIndex: Double?,
     val createdAt: Long,
     val updatedAt: Long,
     val lastOpenedAt: Long?,
+)
+
+data class BookshelfBookSnapshot(
+    val book: Book,
+    val totalProgression: Double?,
 )
 
 data class Chapter(

@@ -13,6 +13,16 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY COALESCE(lastOpenedAt, updatedAt) DESC")
     fun observeBooks(): Flow<List<BookEntity>>
 
+    @Query(
+        """
+        SELECT books.*, reading_progress.totalProgression AS totalProgression
+        FROM books
+        LEFT JOIN reading_progress ON reading_progress.bookId = books.id
+        ORDER BY COALESCE(books.lastOpenedAt, books.updatedAt) DESC
+        """
+    )
+    fun observeBookshelfBooks(): Flow<List<BookshelfBookProjection>>
+
     @Query("SELECT * FROM books WHERE id = :bookId")
     suspend fun findById(bookId: String): BookEntity?
 
@@ -21,6 +31,9 @@ interface BookDao {
 
     @Upsert
     suspend fun upsert(book: BookEntity)
+
+    @Query("UPDATE books SET manualSeries = :series, manualSeriesIndex = :seriesIndex, updatedAt = :updatedAt WHERE id IN (:bookIds)")
+    suspend fun updateManualSeries(bookIds: List<String>, series: String?, seriesIndex: Double?, updatedAt: Long)
 }
 
 @Dao

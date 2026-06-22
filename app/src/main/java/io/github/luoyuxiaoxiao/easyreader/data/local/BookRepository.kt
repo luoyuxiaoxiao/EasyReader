@@ -2,6 +2,7 @@ package io.github.luoyuxiaoxiao.easyreader.data.local
 
 import androidx.room.withTransaction
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
+import io.github.luoyuxiaoxiao.easyreader.domain.book.BookshelfBookSnapshot
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Chapter
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgress
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,16 @@ class BookRepository(
 
     fun observeBooks(): Flow<List<Book>> =
         bookDao.observeBooks().map { books -> books.map { it.toDomain() } }
+
+    fun observeBookshelfBooks(): Flow<List<BookshelfBookSnapshot>> =
+        bookDao.observeBookshelfBooks().map { rows ->
+            rows.map { row ->
+                BookshelfBookSnapshot(
+                    book = row.toDomainBook(),
+                    totalProgression = row.totalProgression,
+                )
+            }
+        }
 
     suspend fun findBook(bookId: String): Book? =
         bookDao.findById(bookId)?.toDomain()
@@ -39,6 +50,11 @@ class BookRepository(
         readingProgressDao.upsert(progress.toEntity())
     }
 
+    suspend fun updateManualSeries(bookIds: List<String>, series: String?, seriesIndex: Double?) {
+        if (bookIds.isEmpty()) return
+        bookDao.updateManualSeries(bookIds, series, seriesIndex, System.currentTimeMillis())
+    }
+
     suspend fun recordShortcut(bookId: String, shortcutId: String, now: Long) {
         shortcutDao.upsert(
             ShortcutEntity(
@@ -59,6 +75,27 @@ private fun BookEntity.toDomain(): Book =
         filePath = filePath,
         sha256 = sha256,
         coverPath = coverPath,
+        metadataSeries = metadataSeries,
+        metadataSeriesIndex = metadataSeriesIndex,
+        manualSeries = manualSeries,
+        manualSeriesIndex = manualSeriesIndex,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        lastOpenedAt = lastOpenedAt,
+    )
+
+private fun BookshelfBookProjection.toDomainBook(): Book =
+    Book(
+        id = id,
+        title = title,
+        author = author,
+        filePath = filePath,
+        sha256 = sha256,
+        coverPath = coverPath,
+        metadataSeries = metadataSeries,
+        metadataSeriesIndex = metadataSeriesIndex,
+        manualSeries = manualSeries,
+        manualSeriesIndex = manualSeriesIndex,
         createdAt = createdAt,
         updatedAt = updatedAt,
         lastOpenedAt = lastOpenedAt,
@@ -72,6 +109,10 @@ private fun Book.toEntity(): BookEntity =
         filePath = filePath,
         sha256 = sha256,
         coverPath = coverPath,
+        metadataSeries = metadataSeries,
+        metadataSeriesIndex = metadataSeriesIndex,
+        manualSeries = manualSeries,
+        manualSeriesIndex = manualSeriesIndex,
         createdAt = createdAt,
         updatedAt = updatedAt,
         lastOpenedAt = lastOpenedAt,
