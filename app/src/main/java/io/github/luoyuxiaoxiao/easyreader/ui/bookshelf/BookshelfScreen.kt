@@ -1,25 +1,35 @@
 package io.github.luoyuxiaoxiao.easyreader.ui.bookshelf
 
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ListItem
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -30,11 +40,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfBook
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfEntry
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
+import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSeries
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun BookshelfScreen(
@@ -51,6 +74,8 @@ fun BookshelfScreen(
             if (!state.isSelecting) onOpenBook(bookId)
         },
         onBookLongClick = viewModel::toggleSelection,
+        onSeriesClick = viewModel::openSeries,
+        onCloseSeries = viewModel::closeSeries,
         onClearSelection = viewModel::clearSelection,
         onRequestShortcuts = viewModel::requestShortcutsForSelection,
         onMessageShown = viewModel::clearMessage,
@@ -65,6 +90,8 @@ private fun BookshelfContent(
     onImport: (List<android.net.Uri>) -> Unit,
     onBookClick: (String) -> Unit,
     onBookLongClick: (String) -> Unit,
+    onSeriesClick: (String) -> Unit,
+    onCloseSeries: () -> Unit,
     onClearSelection: () -> Unit,
     onRequestShortcuts: () -> Unit,
     onMessageShown: () -> Unit,
@@ -75,6 +102,9 @@ private fun BookshelfContent(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = onImport,
     )
+    val openedSeries = state.entries
+        .filterIsInstance<BookshelfEntry.Series>()
+        .firstOrNull { it.series.id == state.openedSeriesId }
 
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
@@ -87,7 +117,18 @@ private fun BookshelfContent(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(if (state.isSelecting) "已选择 ${state.selectedBookIds.size} 本" else "EasyReader")
+                    Text(
+                        when {
+                            state.isSelecting -> "已选择 ${state.selectedBookIds.size} 本"
+                            openedSeries != null -> openedSeries.series.title
+                            else -> "EasyReader"
+                        }
+                    )
+                },
+                navigationIcon = {
+                    if (openedSeries != null && !state.isSelecting) {
+                        TextButton(onClick = onCloseSeries) { Text("返回") }
+                    }
                 },
                 actions = {
                     if (state.isSelecting) {
@@ -97,7 +138,7 @@ private fun BookshelfContent(
                         TextButton(onClick = onClearSelection) {
                             Text("取消")
                         }
-                    } else {
+                    } else if (openedSeries == null) {
                         Button(
                             onClick = {
                                 // 不同 DocumentsProvider 对 .epub 的 MIME 识别不一致，放宽选择器后由导入解析继续兜底。
@@ -118,22 +159,33 @@ private fun BookshelfContent(
                 .fillMaxSize()
                 .padding(contentPadding),
         ) {
-            if (state.books.isEmpty()) {
-                Text(
-                    text = if (state.isImporting) "正在导入" else "导入 EPUB 后开始阅读",
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.books, key = { it.id }) { book ->
-                        BookshelfRow(
-                            book = book,
-                            selected = book.id in state.selectedBookIds,
-                            selecting = state.isSelecting,
-                            onClick = { onBookClick(book.id) },
-                            onLongClick = { onBookLongClick(book.id) },
-                        )
-                    }
+            when {
+                state.entries.isEmpty() -> {
+                    Text(
+                        text = if (state.isImporting) "正在导入" else "导入 EPUB 后开始阅读",
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+
+                openedSeries != null -> {
+                    SeriesBooksGrid(
+                        books = openedSeries.series.books,
+                        selectedBookIds = state.selectedBookIds,
+                        selecting = state.isSelecting,
+                        onBookClick = onBookClick,
+                        onBookLongClick = onBookLongClick,
+                    )
+                }
+
+                else -> {
+                    BookshelfGrid(
+                        entries = state.entries,
+                        selectedBookIds = state.selectedBookIds,
+                        selecting = state.isSelecting,
+                        onBookClick = onBookClick,
+                        onBookLongClick = onBookLongClick,
+                        onSeriesClick = onSeriesClick,
+                    )
                 }
             }
 
@@ -144,36 +196,211 @@ private fun BookshelfContent(
     }
 }
 
+@Composable
+private fun BookshelfGrid(
+    entries: List<BookshelfEntry>,
+    selectedBookIds: Set<String>,
+    selecting: Boolean,
+    onBookClick: (String) -> Unit,
+    onBookLongClick: (String) -> Unit,
+    onSeriesClick: (String) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(entries, key = { entryKey(it) }) { entry ->
+            when (entry) {
+                is BookshelfEntry.Series -> SeriesStackItem(
+                    series = entry.series,
+                    onClick = { onSeriesClick(entry.series.id) },
+                )
+
+                is BookshelfEntry.SingleBook -> BookGridItem(
+                    book = entry.book,
+                    progress = entry.progress,
+                    selected = entry.book.id in selectedBookIds,
+                    selecting = selecting,
+                    onClick = { onBookClick(entry.book.id) },
+                    onLongClick = { onBookLongClick(entry.book.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeriesBooksGrid(
+    books: List<BookshelfBook>,
+    selectedBookIds: Set<String>,
+    selecting: Boolean,
+    onBookClick: (String) -> Unit,
+    onBookLongClick: (String) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(books, key = { it.id }) { book ->
+            BookGridItem(
+                book = book,
+                progress = BookshelfGrouping.normalizeProgress(book.totalProgression),
+                selected = book.id in selectedBookIds,
+                selecting = selecting,
+                onClick = { onBookClick(book.id) },
+                onLongClick = { onBookLongClick(book.id) },
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookshelfRow(
-    book: Book,
+private fun BookGridItem(
+    book: BookshelfBook,
+    progress: Double,
     selected: Boolean,
     selecting: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    ListItem(
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-            ),
-        headlineContent = { Text(book.title) },
-        supportingContent = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(book.author ?: "未知作者")
-                book.lastOpenedAt?.let { Text("最近阅读") }
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    ) {
+        BookCoverBox(
+            book = book,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.68f),
+        )
+        LinearProgressIndicator(
+            progress = { progress.toFloat() },
+            color = BookshelfProgressGreen,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(5.dp)
+                .padding(top = 4.dp),
+        )
+        Text(
+            text = book.title,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (selecting) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Checkbox(checked = selected, onCheckedChange = null)
             }
-        },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selecting) {
-                    Checkbox(checked = selected, onCheckedChange = null)
-                    Spacer(Modifier.width(4.dp))
-                }
-            }
-        },
-    )
+        }
+    }
 }
+
+@Composable
+private fun SeriesStackItem(series: BookshelfSeries, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.82f),
+        ) {
+            series.books.take(4).reversed().forEachIndexed { index, book ->
+                BookCoverBox(
+                    book = book,
+                    modifier = Modifier
+                        .fillMaxWidth(0.82f)
+                        .aspectRatio(0.68f)
+                        .align(Alignment.Center)
+                        .offset(x = (index * 5).dp, y = (index * 2).dp),
+                )
+            }
+            Text(
+                text = "${series.books.size} 本",
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+            )
+        }
+        LinearProgressIndicator(
+            progress = { series.progress.toFloat() },
+            color = BookshelfProgressGreen,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(5.dp),
+        )
+        Text(
+            text = series.title,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun BookCoverBox(book: BookshelfBook, modifier: Modifier = Modifier) {
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = book.coverPath) {
+        value = withContext(Dispatchers.IO) {
+            book.coverPath?.let { path -> BitmapFactory.decodeFile(path) }
+        }
+    }
+    Box(
+        modifier = modifier
+            .widthIn(min = 64.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = book.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text(
+                text = book.title.take(12),
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(8.dp),
+            )
+        }
+    }
+}
+
+private fun entryKey(entry: BookshelfEntry): String =
+    when (entry) {
+        is BookshelfEntry.Series -> "series:${entry.series.id}"
+        is BookshelfEntry.SingleBook -> "book:${entry.book.id}"
+    }
+
+private val BookshelfProgressGreen = Color(0xFF18A558)
