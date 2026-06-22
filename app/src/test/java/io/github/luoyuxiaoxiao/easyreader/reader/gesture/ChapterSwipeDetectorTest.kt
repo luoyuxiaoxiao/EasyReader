@@ -20,8 +20,24 @@ class ChapterSwipeDetectorTest {
 
     @Test
     fun nearHorizontalSwipeSwitchesChapterWithoutDiagonalMovement() {
-        val next = detector.evaluate(startXPx = 540f, dxPx = -170f, dyPx = 8f, velocityXPxPerSecond = -900f)
-        val previous = detector.evaluate(startXPx = 540f, dxPx = 170f, dyPx = 8f, velocityXPxPerSecond = 900f)
+        val next = detector.evaluate(startXPx = 540f, dxPx = -230f, dyPx = 8f, velocityXPxPerSecond = -900f)
+        val previous = detector.evaluate(startXPx = 540f, dxPx = 230f, dyPx = 8f, velocityXPxPerSecond = 900f)
+
+        assertEquals(ChapterSwipeDecision.NextChapter, next)
+        assertEquals(ChapterSwipeDecision.PreviousChapter, previous)
+    }
+
+    @Test
+    fun oldMediumHorizontalSwipeNoLongerSwitchesChapter() {
+        val event = detector.evaluate(startXPx = 540f, dxPx = -170f, dyPx = 8f, velocityXPxPerSecond = -900f)
+
+        assertEquals(ChapterSwipeDecision.KeepReading, event)
+    }
+
+    @Test
+    fun longerHorizontalSwipeStillSwitchesChapter() {
+        val next = detector.evaluate(startXPx = 540f, dxPx = -230f, dyPx = 20f, velocityXPxPerSecond = -1000f)
+        val previous = detector.evaluate(startXPx = 540f, dxPx = 230f, dyPx = 20f, velocityXPxPerSecond = 1000f)
 
         assertEquals(ChapterSwipeDecision.NextChapter, next)
         assertEquals(ChapterSwipeDecision.PreviousChapter, previous)
