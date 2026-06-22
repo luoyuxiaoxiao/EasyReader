@@ -1,22 +1,34 @@
-package io.github.luoyuxiaoxiao.easyreader.fixtures
+package io.github.luoyuxiaoxiao.easyreader.domain.importer
 
 import java.io.File
 import java.util.Base64
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
-data class MinimalEpubOptions(
-    val title: String = "Minimal EPUB",
-    val author: String = "EasyReader",
-    val includeCover: Boolean = false,
-    val calibreSeries: String? = null,
-    val calibreSeriesIndex: Double? = null,
-)
+class EpubMetadataParserTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
-object MinimalEpubFixture {
-    fun writeTo(file: File, options: MinimalEpubOptions = MinimalEpubOptions()) {
-        file.parentFile?.mkdirs()
+    @Test
+    fun parsesCoverAndCalibreSeriesMetadata() {
+        val epub = temporaryFolder.newFile("series-cover.epub")
+        writeEpub(epub)
+
+        val metadata = EpubMetadataParser.parse(epub)
+
+        assertEquals("Fate stay night", metadata.series)
+        assertEquals(1.0, metadata.seriesIndex!!, 0.0001)
+        assertNotNull(metadata.cover)
+        assertEquals("OEBPS/images/cover.png", metadata.cover!!.zipPath)
+    }
+
+    private fun writeEpub(file: File) {
         ZipOutputStream(file.outputStream()).use { zip ->
             zip.writeStoredEntry("mimetype", "application/epub+zip")
             zip.writeDeflatedEntry(
@@ -36,30 +48,23 @@ object MinimalEpubFixture {
                     <?xml version="1.0" encoding="UTF-8"?>
                     <package version="3.0" unique-identifier="book-id" xmlns="http://www.idpf.org/2007/opf">
                         <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-                            <dc:identifier id="book-id">minimal-epub</dc:identifier>
-                            <dc:title>${options.title}</dc:title>
-                            <dc:creator>${options.author}</dc:creator>
-                            <dc:language>zh-CN</dc:language>
-                            ${options.calibreSeries?.let { """<meta name="calibre:series" content="$it"/>""" } ?: ""}
-                            ${options.calibreSeriesIndex?.let { """<meta name="calibre:series_index" content="$it"/>""" } ?: ""}
+                            <dc:title>Minimal EPUB</dc:title>
+                            <dc:creator>EasyReader</dc:creator>
+                            <meta name="calibre:series" content="Fate stay night"/>
+                            <meta name="calibre:series_index" content="1.0"/>
                         </metadata>
                         <manifest>
-                            ${if (options.includeCover) """<item id="cover-img" href="images/cover.png" media-type="image/png" properties="cover-image"/>""" else ""}
+                            <item id="cover-img" href="images/cover.png" media-type="image/png" properties="cover-image"/>
                             <item id="chapter-1" href="chapter-1.xhtml" media-type="application/xhtml+xml"/>
-                            <item id="chapter-2" href="chapter-2.xhtml" media-type="application/xhtml+xml"/>
                         </manifest>
                         <spine>
                             <itemref idref="chapter-1"/>
-                            <itemref idref="chapter-2"/>
                         </spine>
                     </package>
                 """.trimIndent()
             )
             zip.writeDeflatedEntry("OEBPS/chapter-1.xhtml", chapter("Chapter 1"))
-            zip.writeDeflatedEntry("OEBPS/chapter-2.xhtml", chapter("Chapter 2"))
-            if (options.includeCover) {
-                zip.writeDeflatedEntry("OEBPS/images/cover.png", tinyPng)
-            }
+            zip.writeDeflatedEntry("OEBPS/images/cover.png", tinyPng)
         }
     }
 
@@ -68,7 +73,7 @@ object MinimalEpubFixture {
             <?xml version="1.0" encoding="UTF-8"?>
             <html xmlns="http://www.w3.org/1999/xhtml">
                 <head><title>$title</title></head>
-                <body><h1>$title</h1><p>EasyReader fixture.</p></body>
+                <body><h1>$title</h1></body>
             </html>
         """.trimIndent()
 

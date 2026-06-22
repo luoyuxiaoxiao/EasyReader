@@ -8,6 +8,7 @@ import io.github.luoyuxiaoxiao.easyreader.data.local.AppDatabase
 import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
 import io.github.luoyuxiaoxiao.easyreader.fixtures.MinimalEpubFixture
+import io.github.luoyuxiaoxiao.easyreader.fixtures.MinimalEpubOptions
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -72,6 +73,32 @@ class EpubImportServiceTest {
         assertEquals(1, repository.observeBooks().first().size)
     }
 
-    private fun writeFixture(name: String): File =
-        File(context.cacheDir, name).also { MinimalEpubFixture.writeTo(it) }
+    @Test
+    fun importsCoverImageAndStoresCoverPath() = runBlocking {
+        val epub = writeFixture("cover.epub", MinimalEpubOptions(includeCover = true))
+
+        service.importUris(listOf(Uri.fromFile(epub)))
+
+        val book = repository.observeBooks().first().single()
+        val coverPath = requireNotNull(book.coverPath)
+        assertTrue(File(coverPath).isFile)
+        assertTrue(File(coverPath).length() > 0)
+    }
+
+    @Test
+    fun importsCalibreSeriesMetadata() = runBlocking {
+        val epub = writeFixture(
+            "series.epub",
+            MinimalEpubOptions(calibreSeries = "Fate stay night", calibreSeriesIndex = 1.0),
+        )
+
+        service.importUris(listOf(Uri.fromFile(epub)))
+
+        val book = repository.observeBooks().first().single()
+        assertEquals("Fate stay night", book.metadataSeries)
+        assertEquals(1.0, book.metadataSeriesIndex!!, 0.0001)
+    }
+
+    private fun writeFixture(name: String, options: MinimalEpubOptions = MinimalEpubOptions()): File =
+        File(context.cacheDir, name).also { MinimalEpubFixture.writeTo(it, options) }
 }
