@@ -22,6 +22,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
     var onVerticalScrollFinished: () -> Unit = {}
     var onFontScaleChanged: (Float) -> Unit = {}
     var onFontScaleFinished: () -> Unit = {}
+    var onReaderTapCandidate: (Float, Float) -> Unit = { _, _ -> }
     var onReaderContentTapConsumed: () -> Boolean = { false }
     var topChromeControlsVisible: Boolean = false
 
@@ -120,7 +121,8 @@ class ReaderGestureLayout @JvmOverloads constructor(
             MotionEvent.ACTION_UP -> {
                 updateGesturePath(event)
                 var handledByReader = horizontalLocked
-                val elapsedSeconds = ((event.eventTime - downTime).coerceAtLeast(1L)) / 1000f
+                val elapsedMs = event.eventTime - downTime
+                val elapsedSeconds = elapsedMs.coerceAtLeast(1L) / 1000f
                 val dx = event.x - downX
                 val dy = event.y - downY
                 maxAbsDx = maxOf(maxAbsDx, abs(dx))
@@ -136,7 +138,15 @@ class ReaderGestureLayout @JvmOverloads constructor(
                     !isPostVerticalScrollSuppressed(event.eventTime) &&
                     event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS
                 ) {
-                    when (chapterSwipeDecision(netDx = dx, maxAbsDx = maxAbsDx, pathAbsDy = pathAbsDy, velocityX = velocityX)) {
+                    when (
+                        chapterSwipeDecision(
+                            netDx = dx,
+                            maxAbsDx = maxAbsDx,
+                            pathAbsDy = pathAbsDy,
+                            velocityX = velocityX,
+                            durationMs = elapsedMs,
+                        )
+                    ) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
                             onNextChapter()
@@ -153,6 +163,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
                     }
                 } else if (!scaling && explicitTap) {
                     val handledByChild = super.dispatchTouchEvent(event)
+                    onReaderTapCandidate(event.x, event.y)
                     if (onReaderContentTapConsumed()) {
                         verticalLocked = false
                         horizontalLocked = false
@@ -235,6 +246,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
         maxAbsDx: Float,
         pathAbsDy: Float,
         velocityX: Float,
+        durationMs: Long,
     ): ChapterSwipeDecision {
         val gestureWidth = width.takeIf { it > 0 }?.toFloat() ?: resources.displayMetrics.widthPixels.toFloat()
         val signedMaxAbsDx =
@@ -251,6 +263,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
             dxPx = signedMaxAbsDx,
             dyPx = pathAbsDy,
             velocityXPxPerSecond = velocityX,
+            durationMs = durationMs,
         )
     }
 
@@ -266,9 +279,9 @@ class ReaderGestureLayout @JvmOverloads constructor(
     private companion object {
         const val SWITCH_COOLDOWN_MS = 250L
         const val POST_VERTICAL_SCROLL_SUPPRESS_MS = 450L
-        const val CONTENT_TAP_CONSUME_WAIT_MS = 80L
+        const val CONTENT_TAP_CONSUME_WAIT_MS = 180L
         const val VERTICAL_LOCK_RATIO = 1.2f
-        const val HORIZONTAL_LOCK_RATIO = 2.0f
+        const val HORIZONTAL_LOCK_RATIO = 3.0f
         const val HORIZONTAL_LOCK_DISTANCE_DP = 72f
         const val DIRECTION_LOCK_SLOP_DP = 12f
         const val TAP_SLOP_DP = 8f

@@ -15,6 +15,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.commitNow
@@ -31,19 +33,25 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.Locale
+import org.json.JSONObject
 import org.readium.r2.navigator.HyperlinkNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
+import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
 
 class ReaderActivity : FragmentActivity() {
     private lateinit var viewModel: ReaderViewModel
+    private lateinit var readerRoot: ReaderGestureLayout
     private var navigator: EpubNavigatorFragment? = null
     private var locatorJob: Job? = null
     private var fragmentContainerId: Int = View.NO_ID
     private var scrollWebView: WebView? = null
     private var currentReadingOrderIndex: Int = 0
+    private var pendingChapterStartIndex: Int? = null
+    private var pendingChapterStartUntilMs: Long = 0L
     private val footnoteHtml = mutableStateOf<String?>(null)
     private val imagePreviewUrl = mutableStateOf<String?>(null)
     @Volatile
@@ -74,9 +82,19 @@ class ReaderActivity : FragmentActivity() {
         )[ReaderViewModel::class.java]
 
         val root = ReaderGestureLayout(this)
+        readerRoot = root
         fragmentContainerId = View.generateViewId()
+        val readerContainer = FragmentContainerView(this).apply {
+            id = fragmentContainerId
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                // 只让正文避开底部导航栏；顶部仍交给 Readium 自己铺满，避免状态栏下再次出现正文空白条。
+                view.setPadding(0, 0, 0, bottomInset)
+                insets
+            }
+        }
         root.addView(
-            FragmentContainerView(this).apply { id = fragmentContainerId },
+            readerContainer,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -138,6 +156,7 @@ class ReaderActivity : FragmentActivity() {
         root.onFontScaleFinished = viewModel::onFontScaleGestureFinished
         root.onNextChapter = { goToRelativeChapter(1) }
         root.onPreviousChapter = { goToRelativeChapter(-1) }
+        root.onReaderTapCandidate = ::probeImageAtTap
         root.onReaderContentTapConsumed = ::consumeReaderContentTap
         setContentView(root)
 
@@ -196,6 +215,10 @@ class ReaderActivity : FragmentActivity() {
                     val readingOrderIndex = session.publication.readingOrder.indexOfFirst {
                         it.href.toString() == href
                     }.takeIf { it >= 0 } ?: session.initialReadingOrderIndex
+                    if (shouldIgnoreLocatorDuringChapterStart(readingOrderIndex, locator)) {
+                        return@collect
+                    }
+                    clearPendingChapterStartIfArrived(readingOrderIndex, locator)
                     currentReadingOrderIndex = readingOrderIndex
                     viewModel.onLocatorChanged(
                         locatorJson = locator.toJSON().toString(),
@@ -219,17 +242,47 @@ class ReaderActivity : FragmentActivity() {
         if (link == null) {
             viewModel.showChromeBriefly("已经到达边界")
         } else {
-            if (epubNavigator.go(link, animated = true)) {
+            val targetLocator = link.toChapterStartLocator()
+            if (epubNavigator.go(targetLocator, animated = true)) {
                 currentReadingOrderIndex = target
+                markPendingChapterStart(target)
                 viewModel.saveNextLocatorNow()
                 viewModel.onReaderChapterOpened(
                     readingOrderIndex = target,
                     chapterWeights = session.chapterWeights,
+                    chapterStartLocatorJson = targetLocator.toJSON().toString(),
                 )
+                viewModel.saveProgressNow()
                 rebindWebViewScrollUpdates(session, sampleAfterBind = true)
             } else {
                 viewModel.showChromeBriefly("已经到达边界")
             }
+        }
+    }
+
+    private fun markPendingChapterStart(readingOrderIndex: Int) {
+        pendingChapterStartIndex = readingOrderIndex
+        pendingChapterStartUntilMs = System.currentTimeMillis() + CHAPTER_START_LOCATOR_GUARD_MS
+    }
+
+    private fun shouldIgnoreLocatorDuringChapterStart(readingOrderIndex: Int, locator: Locator): Boolean {
+        val pendingIndex = pendingChapterStartIndex ?: return false
+        if (System.currentTimeMillis() > pendingChapterStartUntilMs) {
+            pendingChapterStartIndex = null
+            return false
+        }
+        // 切章后的短时间窗口内，只接受目标章节开头附近的 locator，避免旧 WebView 的末尾滚动位置回写。
+        if (readingOrderIndex != pendingIndex) return true
+        return (locator.locations.progression ?: 0.0) > CHAPTER_START_MAX_ACCEPTED_PROGRESSION
+    }
+
+    private fun clearPendingChapterStartIfArrived(readingOrderIndex: Int, locator: Locator) {
+        val pendingIndex = pendingChapterStartIndex ?: return
+        if (
+            readingOrderIndex == pendingIndex &&
+            (locator.locations.progression ?: 0.0) <= CHAPTER_START_MAX_ACCEPTED_PROGRESSION
+        ) {
+            pendingChapterStartIndex = null
         }
     }
 
@@ -350,6 +403,24 @@ class ReaderActivity : FragmentActivity() {
         webView.evaluateJavascript(IMAGE_TAP_SCRIPT, null)
     }
 
+    private fun probeImageAtTap(rootX: Float, rootY: Float) {
+        val webView = scrollWebView ?: window.decorView.findBestVisibleWebView() ?: return
+        installImageTapBridge(webView)
+        val rootLocation = IntArray(2)
+        val webViewLocation = IntArray(2)
+        readerRoot.getLocationOnScreen(rootLocation)
+        webView.getLocationOnScreen(webViewLocation)
+        val localX = rootLocation[0] + rootX - webViewLocation[0]
+        val localY = rootLocation[1] + rootY - webViewLocation[1]
+        if (localX < 0f || localY < 0f || localX > webView.width || localY > webView.height) return
+        val scale = webView.scale.takeIf { it > 0f } ?: 1f
+        // 注入监听可能因 Readium 页面重建而失效；轻点后再按坐标主动探测一次图片命中。
+        webView.evaluateJavascript(
+            imageTapProbeScript(clientX = localX / scale, clientY = localY / scale),
+            null,
+        )
+    }
+
     private fun markReaderContentTapConsumed() {
         readerContentTapConsumed = true
     }
@@ -379,6 +450,25 @@ class ReaderActivity : FragmentActivity() {
         private const val WEB_VIEW_BIND_MAX_ATTEMPTS = 20
         private const val WEB_VIEW_BIND_RETRY_MS = 100L
         private const val IMAGE_TAP_BRIDGE_NAME = "EasyReaderImageBridge"
+        private const val CHAPTER_START_LOCATOR_GUARD_MS = 1200L
+        private const val CHAPTER_START_MAX_ACCEPTED_PROGRESSION = 0.05
+        private fun imageTapProbeScript(clientX: Float, clientY: Float): String {
+            val x = String.format(Locale.US, "%.2f", clientX)
+            val y = String.format(Locale.US, "%.2f", clientY)
+            return """
+                (function() {
+                  var node = document.elementFromPoint($x, $y);
+                  while (node && node.tagName && node.tagName.toLowerCase() !== 'img') {
+                    node = node.parentElement;
+                  }
+                  if (!node || !node.tagName || node.tagName.toLowerCase() !== 'img') return false;
+                  var src = node.currentSrc || node.src || node.getAttribute('src');
+                  if (!src) return false;
+                  window.$IMAGE_TAP_BRIDGE_NAME.open(src);
+                  return true;
+                })();
+            """.trimIndent()
+        }
         private val IMAGE_TAP_SCRIPT = """
             (function() {
               if (window.__easyReaderImageTapInstalled) return;
@@ -393,6 +483,7 @@ class ReaderActivity : FragmentActivity() {
                 if (!src) return;
                 event.preventDefault();
                 event.stopPropagation();
+                if (event.stopImmediatePropagation) event.stopImmediatePropagation();
                 window.$IMAGE_TAP_BRIDGE_NAME.open(src);
               }, true);
             })();
@@ -402,6 +493,20 @@ class ReaderActivity : FragmentActivity() {
             Intent(context, ReaderActivity::class.java).putExtra(EXTRA_BOOK_ID, bookId)
     }
 }
+
+private fun Link.toChapterStartLocator(): Locator =
+    requireNotNull(
+        Locator.fromJSON(
+            JSONObject()
+                .put("href", href.toString())
+                .put("type", mediaType.toString())
+                .put(
+                    "locations",
+                    JSONObject()
+                        .put("progression", 0.0),
+                ),
+        ),
+    )
 
 private fun View.findBestVisibleWebView(): WebView? {
     var best: WebView? = null

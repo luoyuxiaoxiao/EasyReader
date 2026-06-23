@@ -96,7 +96,7 @@ class ReaderGestureLayoutTest {
 
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 540f, y = 800f, eventTime = 0L))
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 542f, y = 802f, eventTime = 120L))
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(220))
 
         assertEquals(1, taps)
     }
@@ -125,7 +125,7 @@ class ReaderGestureLayoutTest {
     }
 
     @Test
-    fun horizontalSwipeSwitchesChapterWithoutTogglingChrome() {
+    fun deliberateHorizontalDragSwitchesChapterWithoutTogglingChrome() {
         val layout = readerGestureLayout()
         var taps = 0
         var nextChapters = 0
@@ -138,6 +138,39 @@ class ReaderGestureLayoutTest {
 
         assertEquals(0, taps)
         assertEquals(1, nextChapters)
+    }
+
+    @Test
+    fun fastHorizontalFlingDoesNotSwitchChapter() {
+        val layout = readerGestureLayout()
+        var nextChapters = 0
+        layout.onNextChapter = { nextChapters++ }
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 700f, y = 900f, eventTime = 0L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 580f, y = 904f, eventTime = 35L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 460f, y = 906f, eventTime = 80L))
+
+        assertEquals(0, nextChapters)
+    }
+
+    @Test
+    fun explicitTapReportsReaderTapCandidateBeforeChromeDecision() {
+        val layout = readerGestureLayout()
+        val candidates = mutableListOf<Pair<Float, Float>>()
+        var taps = 0
+        layout.onChromeTap = { taps++ }
+        layout.onReaderTapCandidate = { x, y -> candidates += x to y }
+        layout.addView(
+            object : View(layout.context) {
+                override fun dispatchTouchEvent(event: MotionEvent): Boolean = true
+            }.apply { layout(0, 0, 1080, 1920) },
+        )
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 540f, y = 800f, eventTime = 0L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 542f, y = 802f, eventTime = 120L))
+
+        assertEquals(listOf(542f to 802f), candidates)
+        assertEquals(0, taps)
     }
 
     @Test

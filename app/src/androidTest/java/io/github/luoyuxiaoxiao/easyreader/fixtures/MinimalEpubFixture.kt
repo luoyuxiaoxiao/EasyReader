@@ -14,6 +14,8 @@ data class MinimalEpubOptions(
     val includeCover: Boolean = false,
     val calibreSeries: String? = null,
     val calibreSeriesIndex: Double? = null,
+    val chapter1Body: String? = null,
+    val chapter2Body: String? = null,
 )
 
 object MinimalEpubFixture {
@@ -57,20 +59,20 @@ object MinimalEpubFixture {
                     </package>
                 """.trimIndent()
             )
-            zip.writeDeflatedEntry("OEBPS/chapter-1.xhtml", chapter("Chapter 1"))
-            zip.writeDeflatedEntry("OEBPS/chapter-2.xhtml", chapter("Chapter 2"))
+            zip.writeDeflatedEntry("OEBPS/chapter-1.xhtml", chapter("Chapter 1", options.chapter1Body))
+            zip.writeDeflatedEntry("OEBPS/chapter-2.xhtml", chapter("Chapter 2", options.chapter2Body))
             if (options.includeCover) {
                 zip.writeDeflatedEntry("OEBPS/images/cover.png", tinyPng)
             }
         }
     }
 
-    private fun chapter(title: String): String =
+    private fun chapter(title: String, body: String? = null): String =
         """
             <?xml version="1.0" encoding="UTF-8"?>
             <html xmlns="http://www.w3.org/1999/xhtml">
                 <head><title>$title</title></head>
-                <body><h1>$title</h1><p>EasyReader fixture.</p></body>
+                <body>${body ?: "<h1>$title</h1><p>EasyReader fixture.</p>"}</body>
             </html>
         """.trimIndent()
 

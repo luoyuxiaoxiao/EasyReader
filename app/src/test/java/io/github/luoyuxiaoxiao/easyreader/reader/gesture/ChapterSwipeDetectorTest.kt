@@ -75,4 +75,17 @@ class ChapterSwipeDetectorTest {
         val event = detector.evaluate(startXPx = 540f, dxPx = -180f, dyPx = 100f, velocityXPxPerSecond = -3200f)
         assertEquals(ChapterSwipeDecision.KeepReading, event)
     }
+
+    @Test
+    fun fastFlingDoesNotSwitchChapterByVelocityAlone() {
+        val event = detector.evaluate(
+            startXPx = 540f,
+            dxPx = -260f,
+            dyPx = 8f,
+            velocityXPxPerSecond = -3600f,
+            durationMs = 80L,
+        )
+
+        assertEquals(ChapterSwipeDecision.KeepReading, event)
+    }
 }

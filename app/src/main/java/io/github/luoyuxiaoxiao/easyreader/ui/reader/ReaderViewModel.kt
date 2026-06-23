@@ -235,12 +235,25 @@ class ReaderViewModel(
     fun onReaderChapterOpened(
         readingOrderIndex: Int,
         chapterWeights: List<Int>,
+        chapterStartLocatorJson: String? = null,
     ) {
         val chapterProgression = ReaderScrollProgress.CHAPTER_START_PROGRESSION
         val totalProgression = ReaderScrollProgress.chapterStartTotalProgression(
             chapterWeights = chapterWeights,
             readingOrderIndex = readingOrderIndex,
         )
+        val currentBookId = bookId
+        if (currentBookId != null && chapterStartLocatorJson != null) {
+            // 切章成功后先把内存进度推进到目标章节开头，避免旧 WebView/旧 locator 的末尾位置污染下一次打开。
+            lastProgress = ReadingProgress(
+                bookId = currentBookId,
+                locatorJson = chapterStartLocatorJson,
+                readingOrderIndex = readingOrderIndex,
+                totalProgression = totalProgression,
+                chapterProgression = chapterProgression,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
         _uiState.update {
             it.afterReaderChapterOpened(
                 totalProgression = totalProgression,
