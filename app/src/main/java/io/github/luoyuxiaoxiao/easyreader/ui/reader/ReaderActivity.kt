@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.commitNow
@@ -38,6 +39,9 @@ class ReaderActivity : FragmentActivity() {
         // Readium 的 EpubNavigatorFragment 必须通过 navigatorFactory 创建，不能走系统 Fragment 状态恢复。
         // 旋转屏幕后重新打开 session 并 attach navigator，避免 FragmentManager 用空构造函数恢复导致崩溃。
         super.onCreate(null)
+        // ReaderActivity 交给 Readium 和 Compose 各自处理系统栏避让，避免 Activity 默认 fitSystemWindows
+        // 再额外把正文整体下推，形成状态栏下方的空白阅读区域。
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         val bookId = intent.getStringExtra(EXTRA_BOOK_ID)
         if (bookId == null) {
             finish()

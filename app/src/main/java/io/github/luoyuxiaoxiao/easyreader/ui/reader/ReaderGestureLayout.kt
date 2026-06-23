@@ -42,6 +42,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
     private var scaling = false
     private var passThroughToChromeControls = false
     private var lastSwitchAt = -SWITCH_COOLDOWN_MS
+    private var lastVerticalScrollFinishedAt = -POST_VERTICAL_SCROLL_SUPPRESS_MS
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -87,7 +88,13 @@ class ReaderGestureLayout @JvmOverloads constructor(
                     verticalLocked = true
                     onVerticalScrollStarted()
                 }
-                if (!verticalLocked && !horizontalLocked && abs(dx) > abs(dy) * 1.05f && abs(dx) > DIRECTION_LOCK_SLOP_DP * density) {
+                if (
+                    !isPostVerticalScrollSuppressed(event.eventTime) &&
+                    !verticalLocked &&
+                    !horizontalLocked &&
+                    abs(dx) > abs(dy) * 1.05f &&
+                    abs(dx) > DIRECTION_LOCK_SLOP_DP * density
+                ) {
                     horizontalLocked = true
                     cancelChildTouch()
                     return true
@@ -106,7 +113,13 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 val explicitTap = isExplicitTap(event, maxAbsDx, maxAbsDy)
                 if (verticalLocked) {
                     onVerticalScrollFinished()
-                } else if (!scaling && !explicitTap && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
+                    lastVerticalScrollFinishedAt = event.eventTime
+                } else if (
+                    !scaling &&
+                    !explicitTap &&
+                    !isPostVerticalScrollSuppressed(event.eventTime) &&
+                    event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS
+                ) {
                     when (chapterSwipeDecision(netDx = dx, maxAbsDx = maxAbsDx, maxAbsDy = maxAbsDy, velocityX = velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
@@ -137,6 +150,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> {
                 if (verticalLocked) onVerticalScrollFinished()
                 if (scaling) onFontScaleFinished()
+                if (verticalLocked) lastVerticalScrollFinishedAt = event.eventTime
                 verticalLocked = false
                 horizontalLocked = false
                 scaling = false
@@ -152,6 +166,10 @@ class ReaderGestureLayout @JvmOverloads constructor(
         val duration = event.eventTime - downTime
         return movement <= TAP_SLOP_DP * density && duration <= TAP_TIMEOUT_MS
     }
+
+    private fun isPostVerticalScrollSuppressed(eventTime: Long): Boolean =
+        // 竖向滚动刚结束时，用户常会反向滚动并带一点横向漂移；保护窗内不抢 WebView 事件，也不切章。
+        eventTime - lastVerticalScrollFinishedAt <= POST_VERTICAL_SCROLL_SUPPRESS_MS
 
     private fun chapterSwipeDecision(
         netDx: Float,
@@ -188,6 +206,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
 
     private companion object {
         const val SWITCH_COOLDOWN_MS = 250L
+        const val POST_VERTICAL_SCROLL_SUPPRESS_MS = 450L
         const val DIRECTION_LOCK_SLOP_DP = 12f
         const val TAP_SLOP_DP = 8f
         const val TAP_TIMEOUT_MS = 250L

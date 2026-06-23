@@ -99,6 +99,23 @@ class ReaderGestureLayoutTest {
         assertEquals(1, scrollFinishes)
     }
 
+    @Test
+    fun immediateReverseScrollAfterVerticalScrollDoesNotSwitchChapter() {
+        val layout = readerGestureLayout()
+        var nextChapters = 0
+        layout.onNextChapter = { nextChapters++ }
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 540f, y = 600f, eventTime = 0L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 545f, y = 760f, eventTime = 120L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 550f, y = 820f, eventTime = 240L))
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 550f, y = 820f, eventTime = 320L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 430f, y = 780f, eventTime = 420L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 300f, y = 760f, eventTime = 540L))
+
+        assertEquals(0, nextChapters)
+    }
+
     private fun readerGestureLayout(): ReaderGestureLayout =
         ReaderGestureLayout(RuntimeEnvironment.getApplication()).apply {
             layout(0, 0, 1080, 1920)

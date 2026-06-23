@@ -34,11 +34,13 @@ fun ReaderChrome(
                 tonalElevation = 2.dp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .statusBarsPadding(),
+                    .fillMaxWidth(),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        // 顶部背景覆盖状态栏区域，只让内部控件避开系统栏，避免上方出现无法显示文字的空白条。
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onBack) {
