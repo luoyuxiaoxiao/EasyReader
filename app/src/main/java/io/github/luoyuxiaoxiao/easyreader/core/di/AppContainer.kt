@@ -7,6 +7,7 @@ import io.github.luoyuxiaoxiao.easyreader.data.local.BookRepository
 import io.github.luoyuxiaoxiao.easyreader.data.settings.BookshelfSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.data.settings.SeriesGroupingRuleStore
+import io.github.luoyuxiaoxiao.easyreader.data.settings.ThemeSettingsStore
 import io.github.luoyuxiaoxiao.easyreader.domain.importer.EpubImportService
 import io.github.luoyuxiaoxiao.easyreader.reader.readium.ReadiumServices
 import io.github.luoyuxiaoxiao.easyreader.shortcut.ShortcutInstaller
@@ -35,6 +36,10 @@ class AppContainer(context: Context) {
 
     val bookshelfSettingsStore: BookshelfSettingsStore by lazy {
         BookshelfSettingsStore(applicationContext)
+    }
+
+    val themeSettingsStore: ThemeSettingsStore by lazy {
+        ThemeSettingsStore(applicationContext)
     }
 
     val readiumServices: ReadiumServices by lazy {

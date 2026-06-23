@@ -133,6 +133,7 @@ class ReaderViewModel(
     private var settingsSaveJob: Job? = null
     private var saveNextLocatorImmediately = false
     private var readerSettings: ReaderSettings = ReaderSettings()
+    private var useDarkTheme: Boolean = false
 
     fun load(bookId: String) {
         if (this.bookId == bookId && _sessionState.value != null) return
@@ -147,11 +148,17 @@ class ReaderViewModel(
             val progress = withContext(Dispatchers.IO) { bookRepository.progress(bookId) }
             val settings = readerSettingsStore.settings.first()
             readerSettings = settings
-            when (val result = withContext(Dispatchers.IO) { readerSession.open(book, progress, settings) }) {
+            val initialPreferences = settings.toEpubPreferences(useDarkTheme = useDarkTheme)
+            when (val result = withContext(Dispatchers.IO) { readerSession.open(book, progress, initialPreferences) }) {
                 is EasyReaderResult.Success -> _sessionState.value = result.value
                 is EasyReaderResult.Failure -> _uiState.update { it.copy(errorMessage = result.message) }
             }
         }
+    }
+
+    fun applyResolvedTheme(useDarkTheme: Boolean): org.readium.r2.navigator.epub.EpubPreferences {
+        this.useDarkTheme = useDarkTheme
+        return readerSettings.toEpubPreferences(useDarkTheme = useDarkTheme)
     }
 
     fun onLocatorChanged(
@@ -260,7 +267,7 @@ class ReaderViewModel(
         val label = ReaderFontScale.labelFor(updatedScale)
         _uiState.update { it.copy(fontSizeOverlayText = label) }
         return ReaderFontScaleChange(
-            preferences = readerSettings.toEpubPreferences(),
+            preferences = readerSettings.toEpubPreferences(useDarkTheme = useDarkTheme),
             label = label,
         )
     }

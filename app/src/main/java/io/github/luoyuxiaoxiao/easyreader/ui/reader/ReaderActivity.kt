@@ -2,15 +2,17 @@ package io.github.luoyuxiaoxiao.easyreader.ui.reader
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.FrameLayout
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentContainerView
@@ -21,11 +23,19 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.luoyuxiaoxiao.easyreader.EasyReaderApp
+import io.github.luoyuxiaoxiao.easyreader.data.settings.ThemeSettings
+import io.github.luoyuxiaoxiao.easyreader.data.settings.resolveDarkTheme
 import io.github.luoyuxiaoxiao.easyreader.reader.readium.EpubReaderSession
+import io.github.luoyuxiaoxiao.easyreader.ui.theme.EasyReaderTheme
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.readium.r2.navigator.HyperlinkNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Link
+import org.readium.r2.shared.util.AbsoluteUrl
 
 class ReaderActivity : FragmentActivity() {
     private lateinit var viewModel: ReaderViewModel
@@ -34,6 +44,11 @@ class ReaderActivity : FragmentActivity() {
     private var fragmentContainerId: Int = View.NO_ID
     private var scrollWebView: WebView? = null
     private var currentReadingOrderIndex: Int = 0
+    private val footnoteHtml = mutableStateOf<String?>(null)
+    private val imagePreviewUrl = mutableStateOf<String?>(null)
+    @Volatile
+    private var readerContentTapConsumed = false
+    private val imageTapBridge = ImageTapBridge()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Readium 的 EpubNavigatorFragment 必须通过 navigatorFactory 创建，不能走系统 Fragment 状态恢复。
@@ -70,12 +85,20 @@ class ReaderActivity : FragmentActivity() {
         root.addView(
             ComposeView(this).apply {
                 setContent {
+                    val themeSettings = appContainer.themeSettingsStore.settings.collectAsState(initial = ThemeSettings()).value
                     val state = viewModel.uiState.collectAsState().value
                     SideEffect {
                         root.topChromeControlsVisible = state.topChromeVisible
                     }
-                    MaterialTheme {
-                        ReaderChrome(state = state, onBack = { finish() })
+                    EasyReaderTheme(mode = themeSettings.mode) {
+                        ReaderChrome(
+                            state = state,
+                            onBack = { finish() },
+                            footnoteHtml = footnoteHtml.value,
+                            onDismissFootnote = { footnoteHtml.value = null },
+                            imagePreviewUrl = imagePreviewUrl.value,
+                            onDismissImagePreview = { imagePreviewUrl.value = null },
+                        )
                     }
                 }
             },
@@ -115,6 +138,7 @@ class ReaderActivity : FragmentActivity() {
         root.onFontScaleFinished = viewModel::onFontScaleGestureFinished
         root.onNextChapter = { goToRelativeChapter(1) }
         root.onPreviousChapter = { goToRelativeChapter(-1) }
+        root.onReaderContentTapConsumed = ::consumeReaderContentTap
         setContentView(root)
 
         lifecycleScope.launch {
@@ -126,7 +150,21 @@ class ReaderActivity : FragmentActivity() {
                 }
             }
         }
-        viewModel.load(bookId)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appContainer.themeSettingsStore.settings.collectLatest { settings ->
+                    val preferences = viewModel.applyResolvedTheme(
+                        settings.mode.resolveDarkTheme(currentSystemDarkTheme()),
+                    )
+                    navigator?.submitPreferences(preferences)
+                }
+            }
+        }
+        lifecycleScope.launch {
+            val themeSettings = appContainer.themeSettingsStore.settings.first()
+            viewModel.applyResolvedTheme(themeSettings.mode.resolveDarkTheme(currentSystemDarkTheme()))
+            viewModel.load(bookId)
+        }
     }
 
     override fun onStop() {
@@ -138,6 +176,7 @@ class ReaderActivity : FragmentActivity() {
         supportFragmentManager.fragmentFactory = session.navigatorFactory.createFragmentFactory(
             initialLocator = viewModel.startLocatorFor(session),
             initialPreferences = session.initialPreferences,
+            listener = readerNavigatorListener(),
         )
         supportFragmentManager.commitNow {
             replace(fragmentContainerId, EpubNavigatorFragment::class.java, null)
@@ -201,7 +240,10 @@ class ReaderActivity : FragmentActivity() {
         sampleAfterBind: Boolean = false,
     ) {
         val existing = scrollWebView
-        if (existing != null && !force) return
+        if (existing != null && !force) {
+            installImageTapBridge(existing)
+            return
+        }
 
         val webView = window.decorView.findBestVisibleWebView()
         if (webView == null) {
@@ -222,6 +264,7 @@ class ReaderActivity : FragmentActivity() {
             if (scrollY == oldScrollY) return@setOnScrollChangeListener
             updateReaderContentScrollProgress(webView = webView, viewport = view)
         }
+        installImageTapBridge(webView)
         if (sampleAfterBind) {
             // 切章后 WebView 不一定立即发出滚动事件，绑定成功时补一次首尾页测量。
             updateReaderContentScrollProgress(
@@ -271,10 +314,89 @@ class ReaderActivity : FragmentActivity() {
         )
     }
 
+    @OptIn(ExperimentalReadiumApi::class)
+    private fun readerNavigatorListener(): EpubNavigatorFragment.Listener =
+        object : EpubNavigatorFragment.Listener {
+            override fun shouldFollowInternalLink(
+                link: Link,
+                context: HyperlinkNavigator.LinkContext?,
+            ): Boolean {
+                markReaderContentTapConsumed()
+                if (context is HyperlinkNavigator.FootnoteContext) {
+                    showFootnote(context.noteContent)
+                    return false
+                }
+                return true
+            }
+
+            override fun onExternalLinkActivated(url: AbsoluteUrl) {
+                // 外部链接由 Readium 回调明确消费，避免同一次点击继续触发阅读器 chrome。
+                markReaderContentTapConsumed()
+            }
+        }
+
+    private fun showFootnote(html: String) {
+        markReaderContentTapConsumed()
+        footnoteHtml.value = html
+    }
+
+    private fun installImageTapBridge(webView: WebView) {
+        webView.addJavascriptInterface(imageTapBridge, IMAGE_TAP_BRIDGE_NAME)
+        injectImageTapScript(webView)
+        webView.postDelayed({ injectImageTapScript(webView) }, 250L)
+    }
+
+    private fun injectImageTapScript(webView: WebView) {
+        webView.evaluateJavascript(IMAGE_TAP_SCRIPT, null)
+    }
+
+    private fun markReaderContentTapConsumed() {
+        readerContentTapConsumed = true
+    }
+
+    private fun consumeReaderContentTap(): Boolean {
+        val consumed = readerContentTapConsumed
+        readerContentTapConsumed = false
+        return consumed
+    }
+
+    private fun currentSystemDarkTheme(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+    private inner class ImageTapBridge {
+        @JavascriptInterface
+        fun open(src: String) {
+            // JS bridge 可能不在主线程回调；先标记内容点击已消费，再切回主线程打开预览层。
+            markReaderContentTapConsumed()
+            runOnUiThread {
+                imagePreviewUrl.value = src
+            }
+        }
+    }
+
     companion object {
         private const val EXTRA_BOOK_ID = "book_id"
         private const val WEB_VIEW_BIND_MAX_ATTEMPTS = 20
         private const val WEB_VIEW_BIND_RETRY_MS = 100L
+        private const val IMAGE_TAP_BRIDGE_NAME = "EasyReaderImageBridge"
+        private val IMAGE_TAP_SCRIPT = """
+            (function() {
+              if (window.__easyReaderImageTapInstalled) return;
+              window.__easyReaderImageTapInstalled = true;
+              document.addEventListener('click', function(event) {
+                var node = event.target;
+                while (node && node.tagName && node.tagName.toLowerCase() !== 'img') {
+                  node = node.parentElement;
+                }
+                if (!node || !node.tagName || node.tagName.toLowerCase() !== 'img') return;
+                var src = node.currentSrc || node.src || node.getAttribute('src');
+                if (!src) return;
+                event.preventDefault();
+                event.stopPropagation();
+                window.$IMAGE_TAP_BRIDGE_NAME.open(src);
+              }, true);
+            })();
+        """.trimIndent()
 
         fun createIntent(context: Context, bookId: String): Intent =
             Intent(context, ReaderActivity::class.java).putExtra(EXTRA_BOOK_ID, bookId)

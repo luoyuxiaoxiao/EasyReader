@@ -1,6 +1,8 @@
 package io.github.luoyuxiaoxiao.easyreader.ui.reader
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -20,9 +22,11 @@ class ReaderGestureLayout @JvmOverloads constructor(
     var onVerticalScrollFinished: () -> Unit = {}
     var onFontScaleChanged: (Float) -> Unit = {}
     var onFontScaleFinished: () -> Unit = {}
+    var onReaderContentTapConsumed: () -> Boolean = { false }
     var topChromeControlsVisible: Boolean = false
 
     private val density = resources.displayMetrics.density
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -35,17 +39,23 @@ class ReaderGestureLayout @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private var downTime = 0L
+    private var lastX = 0f
+    private var lastY = 0f
     private var maxAbsDx = 0f
     private var maxAbsDy = 0f
+    private var pathAbsDx = 0f
+    private var pathAbsDy = 0f
     private var verticalLocked = false
     private var horizontalLocked = false
     private var scaling = false
     private var passThroughToChromeControls = false
     private var lastSwitchAt = -SWITCH_COOLDOWN_MS
     private var lastVerticalScrollFinishedAt = -POST_VERTICAL_SCROLL_SUPPRESS_MS
+    private var pendingChromeTap: Runnable? = null
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            cancelPendingChromeTap()
             passThroughToChromeControls = topChromeControlsVisible && event.y <= TOP_CHROME_CONTROLS_HEIGHT_DP * density
         }
         if (passThroughToChromeControls) {
@@ -63,8 +73,12 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 downX = event.x
                 downY = event.y
                 downTime = event.eventTime
+                lastX = event.x
+                lastY = event.y
                 maxAbsDx = 0f
                 maxAbsDy = 0f
+                pathAbsDx = 0f
+                pathAbsDy = 0f
                 verticalLocked = false
                 horizontalLocked = false
                 scaling = false
@@ -79,12 +93,13 @@ class ReaderGestureLayout @JvmOverloads constructor(
 
             MotionEvent.ACTION_MOVE -> {
                 if (scaling || event.pointerCount > 1) return super.dispatchTouchEvent(event)
+                updateGesturePath(event)
                 val dx = event.x - downX
                 val dy = event.y - downY
                 maxAbsDx = maxOf(maxAbsDx, abs(dx))
                 maxAbsDy = maxOf(maxAbsDy, abs(dy))
-                // 状态流转：超过轻点范围后立即锁定方向；横向锁定后消费事件，避免 WebView 抢走切章手势。
-                if (!verticalLocked && !horizontalLocked && abs(dy) > abs(dx) * 1.2f && abs(dy) > DIRECTION_LOCK_SLOP_DP * density) {
+                // 状态流转使用累计路径判断方向，避免“下滚后上滚”的折返路径被终点位移抵消。
+                if (!verticalLocked && !horizontalLocked && pathAbsDy > pathAbsDx * VERTICAL_LOCK_RATIO && pathAbsDy > DIRECTION_LOCK_SLOP_DP * density) {
                     verticalLocked = true
                     onVerticalScrollStarted()
                 }
@@ -92,8 +107,8 @@ class ReaderGestureLayout @JvmOverloads constructor(
                     !isPostVerticalScrollSuppressed(event.eventTime) &&
                     !verticalLocked &&
                     !horizontalLocked &&
-                    abs(dx) > abs(dy) * 1.05f &&
-                    abs(dx) > DIRECTION_LOCK_SLOP_DP * density
+                    pathAbsDx > pathAbsDy * HORIZONTAL_LOCK_RATIO &&
+                    pathAbsDx > HORIZONTAL_LOCK_DISTANCE_DP * density
                 ) {
                     horizontalLocked = true
                     cancelChildTouch()
@@ -103,6 +118,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP -> {
+                updateGesturePath(event)
                 var handledByReader = horizontalLocked
                 val elapsedSeconds = ((event.eventTime - downTime).coerceAtLeast(1L)) / 1000f
                 val dx = event.x - downX
@@ -110,7 +126,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 maxAbsDx = maxOf(maxAbsDx, abs(dx))
                 maxAbsDy = maxOf(maxAbsDy, abs(dy))
                 val velocityX = dx / elapsedSeconds
-                val explicitTap = isExplicitTap(event, maxAbsDx, maxAbsDy)
+                val explicitTap = isExplicitTap(event, maxOf(maxAbsDx, pathAbsDx), maxOf(maxAbsDy, pathAbsDy))
                 if (verticalLocked) {
                     onVerticalScrollFinished()
                     lastVerticalScrollFinishedAt = event.eventTime
@@ -120,7 +136,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
                     !isPostVerticalScrollSuppressed(event.eventTime) &&
                     event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS
                 ) {
-                    when (chapterSwipeDecision(netDx = dx, maxAbsDx = maxAbsDx, maxAbsDy = maxAbsDy, velocityX = velocityX)) {
+                    when (chapterSwipeDecision(netDx = dx, maxAbsDx = maxAbsDx, pathAbsDy = pathAbsDy, velocityX = velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
                             onNextChapter()
@@ -136,8 +152,19 @@ class ReaderGestureLayout @JvmOverloads constructor(
                         ChapterSwipeDecision.KeepReading -> Unit
                     }
                 } else if (!scaling && explicitTap) {
-                    cancelChildTouch()
-                    onChromeTap()
+                    val handledByChild = super.dispatchTouchEvent(event)
+                    if (onReaderContentTapConsumed()) {
+                        verticalLocked = false
+                        horizontalLocked = false
+                        scaling = false
+                        return true
+                    }
+                    if (!handledByChild) {
+                        cancelChildTouch()
+                        onChromeTap()
+                    } else {
+                        scheduleChromeTapAfterContentDecision()
+                    }
                     handledByReader = true
                 }
                 if (scaling) onFontScaleFinished()
@@ -155,10 +182,16 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 horizontalLocked = false
                 scaling = false
                 passThroughToChromeControls = false
+                cancelPendingChromeTap()
             }
         }
 
         return super.dispatchTouchEvent(event)
+    }
+
+    override fun onDetachedFromWindow() {
+        cancelPendingChromeTap()
+        super.onDetachedFromWindow()
     }
 
     private fun isExplicitTap(event: MotionEvent, maxAbsDx: Float, maxAbsDy: Float): Boolean {
@@ -171,10 +204,36 @@ class ReaderGestureLayout @JvmOverloads constructor(
         // 竖向滚动刚结束时，用户常会反向滚动并带一点横向漂移；保护窗内不抢 WebView 事件，也不切章。
         eventTime - lastVerticalScrollFinishedAt <= POST_VERTICAL_SCROLL_SUPPRESS_MS
 
+    private fun updateGesturePath(event: MotionEvent) {
+        pathAbsDx += abs(event.x - lastX)
+        pathAbsDy += abs(event.y - lastY)
+        lastX = event.x
+        lastY = event.y
+    }
+
+    private fun scheduleChromeTapAfterContentDecision() {
+        cancelPendingChromeTap()
+        // WebView 内的图片、脚注等点击可能通过 JS/Readium 回调稍晚标记为已消费；
+        // 轻点先交给内容层，短暂等待后再决定是否切换阅读器 chrome。
+        val tap = Runnable {
+            pendingChromeTap = null
+            if (!onReaderContentTapConsumed()) {
+                onChromeTap()
+            }
+        }
+        pendingChromeTap = tap
+        mainHandler.postDelayed(tap, CONTENT_TAP_CONSUME_WAIT_MS)
+    }
+
+    private fun cancelPendingChromeTap() {
+        pendingChromeTap?.let(mainHandler::removeCallbacks)
+        pendingChromeTap = null
+    }
+
     private fun chapterSwipeDecision(
         netDx: Float,
         maxAbsDx: Float,
-        maxAbsDy: Float,
+        pathAbsDy: Float,
         velocityX: Float,
     ): ChapterSwipeDecision {
         val gestureWidth = width.takeIf { it > 0 }?.toFloat() ?: resources.displayMetrics.widthPixels.toFloat()
@@ -190,7 +249,7 @@ class ReaderGestureLayout @JvmOverloads constructor(
         ).evaluate(
             startXPx = downX,
             dxPx = signedMaxAbsDx,
-            dyPx = maxAbsDy,
+            dyPx = pathAbsDy,
             velocityXPxPerSecond = velocityX,
         )
     }
@@ -207,6 +266,10 @@ class ReaderGestureLayout @JvmOverloads constructor(
     private companion object {
         const val SWITCH_COOLDOWN_MS = 250L
         const val POST_VERTICAL_SCROLL_SUPPRESS_MS = 450L
+        const val CONTENT_TAP_CONSUME_WAIT_MS = 80L
+        const val VERTICAL_LOCK_RATIO = 1.2f
+        const val HORIZONTAL_LOCK_RATIO = 2.0f
+        const val HORIZONTAL_LOCK_DISTANCE_DP = 72f
         const val DIRECTION_LOCK_SLOP_DP = 12f
         const val TAP_SLOP_DP = 8f
         const val TAP_TIMEOUT_MS = 250L

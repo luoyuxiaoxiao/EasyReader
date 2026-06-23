@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 
 private val Context.readerSettingsDataStore by preferencesDataStore(name = "reader_settings")
@@ -22,10 +23,11 @@ data class ReaderSettings(
 )
 
 @OptIn(ExperimentalReadiumApi::class)
-fun ReaderSettings.toEpubPreferences(): EpubPreferences =
+fun ReaderSettings.toEpubPreferences(useDarkTheme: Boolean? = null): EpubPreferences =
     EpubPreferences(
         fontSize = fontScale.toDouble(),
         publisherStyles = publisherStyles,
+        theme = useDarkTheme?.let { if (it) Theme.DARK else Theme.LIGHT },
         // 滚动模式必须显式交给 Readium，否则 navigator 会沿用分页默认行为。
         scroll = scroll,
     )

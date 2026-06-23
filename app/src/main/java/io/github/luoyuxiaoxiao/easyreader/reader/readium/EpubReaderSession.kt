@@ -1,8 +1,6 @@
 package io.github.luoyuxiaoxiao.easyreader.reader.readium
 
 import io.github.luoyuxiaoxiao.easyreader.core.result.EasyReaderResult
-import io.github.luoyuxiaoxiao.easyreader.data.settings.ReaderSettings
-import io.github.luoyuxiaoxiao.easyreader.data.settings.toEpubPreferences
 import io.github.luoyuxiaoxiao.easyreader.domain.book.Book
 import io.github.luoyuxiaoxiao.easyreader.domain.book.ReadingProgress
 import java.io.File
@@ -31,7 +29,7 @@ class EpubReaderSession(
     suspend fun open(
         book: Book,
         savedProgress: ReadingProgress?,
-        settings: ReaderSettings,
+        initialPreferences: EpubPreferences,
     ): EasyReaderResult<EpubReaderSessionState> {
         close()
 
@@ -60,7 +58,7 @@ class EpubReaderSession(
                 publication = publication,
                 navigatorFactory = EpubNavigatorFactory(publication),
                 initialLocator = initialLocator,
-                initialPreferences = settings.toEpubPreferences(),
+                initialPreferences = initialPreferences,
                 initialReadingOrderIndex = savedProgress?.readingOrderIndex ?: 0,
                 chapterWeights = EpubChapterWeightEstimator.estimate(File(book.filePath)),
             )

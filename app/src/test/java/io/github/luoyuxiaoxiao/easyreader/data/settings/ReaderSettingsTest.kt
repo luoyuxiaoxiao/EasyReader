@@ -4,7 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.readium.r2.navigator.preferences.Theme
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class ReaderSettingsTest {
     @Test
     fun mapsScrollModeToReadiumPreferences() {
@@ -21,5 +25,11 @@ class ReaderSettingsTest {
 
         assertEquals(1.25, preferences.fontSize!!, 0.0001)
         assertFalse(preferences.publisherStyles!!)
+    }
+
+    @Test
+    fun mapsResolvedThemeToReadiumPreferences() {
+        assertEquals(Theme.DARK, ReaderSettings().toEpubPreferences(useDarkTheme = true).theme)
+        assertEquals(Theme.LIGHT, ReaderSettings().toEpubPreferences(useDarkTheme = false).theme)
     }
 }

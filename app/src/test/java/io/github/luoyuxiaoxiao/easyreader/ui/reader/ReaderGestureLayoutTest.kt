@@ -1,12 +1,16 @@
 package io.github.luoyuxiaoxiao.easyreader.ui.reader
 
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
+import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class ReaderGestureLayoutTest {
@@ -23,13 +27,22 @@ class ReaderGestureLayoutTest {
     }
 
     @Test
-    fun consumedPageTapCancelsChildTouchToAvoidWebViewTextSelection() {
+    fun consumedReaderContentTapDoesNotToggleChrome() {
         val layout = readerGestureLayout()
         val childActions = mutableListOf<Int>()
+        var taps = 0
+        var contentTapConsumed = false
+        layout.onChromeTap = { taps++ }
+        layout.onReaderContentTapConsumed = {
+            contentTapConsumed.also { contentTapConsumed = false }
+        }
         layout.addView(
             object : View(layout.context) {
                 override fun dispatchTouchEvent(event: MotionEvent): Boolean {
                     childActions += event.actionMasked
+                    if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        contentTapConsumed = true
+                    }
                     return true
                 }
             }.apply { layout(0, 0, 1080, 1920) },
@@ -38,7 +51,54 @@ class ReaderGestureLayoutTest {
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 540f, y = 800f, eventTime = 0L))
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 542f, y = 802f, eventTime = 120L))
 
-        assertEquals(listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_CANCEL), childActions)
+        assertEquals(0, taps)
+        assertEquals(listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP), childActions)
+    }
+
+    @Test
+    fun delayedReaderContentTapConsumptionDoesNotToggleChrome() {
+        val layout = readerGestureLayout()
+        var taps = 0
+        var contentTapConsumed = false
+        layout.onChromeTap = { taps++ }
+        layout.onReaderContentTapConsumed = {
+            contentTapConsumed.also { contentTapConsumed = false }
+        }
+        layout.addView(
+            object : View(layout.context) {
+                override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                    if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        // 模拟 WebView 的 JS/Readium 回调稍晚于 ACTION_UP 返回。
+                        Handler(Looper.getMainLooper()).post { contentTapConsumed = true }
+                    }
+                    return true
+                }
+            }.apply { layout(0, 0, 1080, 1920) },
+        )
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 540f, y = 800f, eventTime = 0L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 542f, y = 802f, eventTime = 120L))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+
+        assertEquals(0, taps)
+    }
+
+    @Test
+    fun childHandledPlainTapTogglesChromeAfterContentWindow() {
+        val layout = readerGestureLayout()
+        var taps = 0
+        layout.onChromeTap = { taps++ }
+        layout.addView(
+            object : View(layout.context) {
+                override fun dispatchTouchEvent(event: MotionEvent): Boolean = true
+            }.apply { layout(0, 0, 1080, 1920) },
+        )
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 540f, y = 800f, eventTime = 0L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 542f, y = 802f, eventTime = 120L))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+
+        assertEquals(1, taps)
     }
 
     @Test
@@ -112,6 +172,20 @@ class ReaderGestureLayoutTest {
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 550f, y = 820f, eventTime = 320L))
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 430f, y = 780f, eventTime = 420L))
         layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 300f, y = 760f, eventTime = 540L))
+
+        assertEquals(0, nextChapters)
+    }
+
+    @Test
+    fun foldedVerticalPathWithinOneGestureDoesNotSwitchChapter() {
+        val layout = readerGestureLayout()
+        var nextChapters = 0
+        layout.onNextChapter = { nextChapters++ }
+
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_DOWN, x = 700f, y = 900f, eventTime = 0L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 620f, y = 950f, eventTime = 90L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_MOVE, x = 500f, y = 820f, eventTime = 180L))
+        layout.dispatchTouchEvent(motion(MotionEvent.ACTION_UP, x = 460f, y = 820f, eventTime = 260L))
 
         assertEquals(0, nextChapters)
     }

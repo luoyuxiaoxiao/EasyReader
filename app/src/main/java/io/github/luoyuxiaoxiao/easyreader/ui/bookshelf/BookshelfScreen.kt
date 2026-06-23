@@ -67,12 +67,15 @@ import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfGrouping
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSeries
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.BookshelfSortMode
 import io.github.luoyuxiaoxiao.easyreader.domain.bookshelf.SeriesGroupingRule
+import io.github.luoyuxiaoxiao.easyreader.data.settings.AppThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
 fun BookshelfScreen(
     viewModel: BookshelfViewModel,
+    themeMode: AppThemeMode,
+    onThemeModeSelected: (AppThemeMode) -> Unit,
     onOpenBook: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -95,6 +98,8 @@ fun BookshelfScreen(
         onDeleteCustomRule = viewModel::deleteCustomRule,
         onSetSortMode = viewModel::setSortMode,
         onSetSortAscending = viewModel::setSortAscending,
+        themeMode = themeMode,
+        onThemeModeSelected = onThemeModeSelected,
         onClearSelection = viewModel::clearSelection,
         onDeleteSelectedBooks = viewModel::deleteSelectedBooks,
         onRequestShortcuts = viewModel::requestShortcutsForSelection,
@@ -120,6 +125,8 @@ private fun BookshelfContent(
     onDeleteCustomRule: (String) -> Unit,
     onSetSortMode: (BookshelfSortMode) -> Unit,
     onSetSortAscending: (Boolean) -> Unit,
+    themeMode: AppThemeMode,
+    onThemeModeSelected: (AppThemeMode) -> Unit,
     onClearSelection: () -> Unit,
     onDeleteSelectedBooks: () -> Unit,
     onRequestShortcuts: () -> Unit,
@@ -137,7 +144,7 @@ private fun BookshelfContent(
     var showSeriesDialog by remember { mutableStateOf(false) }
     var seriesName by remember { mutableStateOf("") }
     var showRuleDialog by remember { mutableStateOf(false) }
-    var showOrganizeMenu by remember { mutableStateOf(false) }
+    var settingsMenuLevel by remember { mutableStateOf<SettingsMenuLevel?>(null) }
     var showDeleteBooksDialog by remember { mutableStateOf(false) }
     var ruleToDelete by remember { mutableStateOf<SeriesGroupingRule?>(null) }
     var ruleName by remember { mutableStateOf("") }
@@ -149,7 +156,7 @@ private fun BookshelfContent(
             ruleToDelete != null ||
             showRuleDialog ||
             showSeriesDialog ||
-            showOrganizeMenu ||
+            settingsMenuLevel != null ||
             state.isSelecting ||
             openedSeries != null,
     ) {
@@ -158,7 +165,8 @@ private fun BookshelfContent(
             ruleToDelete != null -> ruleToDelete = null
             showRuleDialog -> showRuleDialog = false
             showSeriesDialog -> showSeriesDialog = false
-            showOrganizeMenu -> showOrganizeMenu = false
+            settingsMenuLevel == SettingsMenuLevel.Root -> settingsMenuLevel = null
+            settingsMenuLevel != null -> settingsMenuLevel = SettingsMenuLevel.Root
             state.isSelecting -> onClearSelection()
             openedSeries != null -> onCloseSeries()
         }
@@ -207,43 +215,87 @@ private fun BookshelfContent(
                         }
                     } else if (openedSeries == null) {
                         Box {
-                            TextButton(onClick = { showOrganizeMenu = true }) {
-                                Text("整理")
+                            TextButton(onClick = { settingsMenuLevel = SettingsMenuLevel.Root }) {
+                                Text("设置")
                             }
                             DropdownMenu(
-                                expanded = showOrganizeMenu,
-                                onDismissRequest = { showOrganizeMenu = false },
+                                expanded = settingsMenuLevel != null,
+                                onDismissRequest = { settingsMenuLevel = null },
                             ) {
-                                Text(
-                                    text = "排序方式",
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                )
-                                BookshelfSortMode.values().forEach { mode ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(sortModeLabel(mode) + if (state.sortMode == mode) " (当前)" else "")
-                                        },
-                                        onClick = {
-                                            onSetSortMode(mode)
-                                            showOrganizeMenu = false
-                                        },
-                                    )
+                                when (settingsMenuLevel) {
+                                    SettingsMenuLevel.Root -> {
+                                        DropdownMenuItem(
+                                            text = { Text("排序方式：${sortModeLabel(state.sortMode)}") },
+                                            onClick = { settingsMenuLevel = SettingsMenuLevel.Sort },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("主题：${themeModeLabel(themeMode)}") },
+                                            onClick = { settingsMenuLevel = SettingsMenuLevel.Theme },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("自动归组规则") },
+                                            onClick = {
+                                                showRuleDialog = true
+                                                settingsMenuLevel = null
+                                            },
+                                        )
+                                    }
+
+                                    SettingsMenuLevel.Sort -> {
+                                        DropdownMenuItem(
+                                            text = { Text("返回设置") },
+                                            onClick = { settingsMenuLevel = SettingsMenuLevel.Root },
+                                        )
+                                        Text(
+                                            text = "排序方式",
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                        )
+                                        BookshelfSortMode.values().forEach { mode ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(sortModeLabel(mode) + if (state.sortMode == mode) " (当前)" else "")
+                                                },
+                                                onClick = {
+                                                    onSetSortMode(mode)
+                                                    settingsMenuLevel = null
+                                                },
+                                            )
+                                        }
+                                        DropdownMenuItem(
+                                            text = { Text(if (state.sortAscending) "切换为降序" else "切换为升序") },
+                                            onClick = {
+                                                onSetSortAscending(!state.sortAscending)
+                                                settingsMenuLevel = null
+                                            },
+                                        )
+                                    }
+
+                                    SettingsMenuLevel.Theme -> {
+                                        DropdownMenuItem(
+                                            text = { Text("返回设置") },
+                                            onClick = { settingsMenuLevel = SettingsMenuLevel.Root },
+                                        )
+                                        Text(
+                                            text = "主题",
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                        )
+                                        AppThemeMode.values().forEach { mode ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(themeModeLabel(mode) + if (themeMode == mode) " (当前)" else "")
+                                                },
+                                                onClick = {
+                                                    onThemeModeSelected(mode)
+                                                    settingsMenuLevel = null
+                                                },
+                                            )
+                                        }
+                                    }
+
+                                    null -> Unit
                                 }
-                                DropdownMenuItem(
-                                    text = { Text(if (state.sortAscending) "切换为降序" else "切换为升序") },
-                                    onClick = {
-                                        onSetSortAscending(!state.sortAscending)
-                                        showOrganizeMenu = false
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("自动归组规则") },
-                                    onClick = {
-                                        showRuleDialog = true
-                                        showOrganizeMenu = false
-                                    },
-                                )
                             }
                         }
                         Button(
@@ -739,5 +791,18 @@ private fun sortModeLabel(mode: BookshelfSortMode): String =
         BookshelfSortMode.Title -> "标题"
         BookshelfSortMode.Series -> "系列顺序"
     }
+
+private fun themeModeLabel(mode: AppThemeMode): String =
+    when (mode) {
+        AppThemeMode.System -> "跟随系统"
+        AppThemeMode.Light -> "白色"
+        AppThemeMode.Dark -> "黑色"
+    }
+
+private enum class SettingsMenuLevel {
+    Root,
+    Sort,
+    Theme,
+}
 
 private val BookshelfProgressGreen = Color(0xFF18A558)
