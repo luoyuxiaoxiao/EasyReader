@@ -35,6 +35,8 @@ class ReaderGestureLayout @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
     private var downTime = 0L
+    private var maxAbsDx = 0f
+    private var maxAbsDy = 0f
     private var verticalLocked = false
     private var horizontalLocked = false
     private var scaling = false
@@ -60,6 +62,8 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 downX = event.x
                 downY = event.y
                 downTime = event.eventTime
+                maxAbsDx = 0f
+                maxAbsDy = 0f
                 verticalLocked = false
                 horizontalLocked = false
                 scaling = false
@@ -76,6 +80,8 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 if (scaling || event.pointerCount > 1) return super.dispatchTouchEvent(event)
                 val dx = event.x - downX
                 val dy = event.y - downY
+                maxAbsDx = maxOf(maxAbsDx, abs(dx))
+                maxAbsDy = maxOf(maxAbsDy, abs(dy))
                 // 状态流转：超过轻点范围后立即锁定方向；横向锁定后消费事件，避免 WebView 抢走切章手势。
                 if (!verticalLocked && !horizontalLocked && abs(dy) > abs(dx) * 1.2f && abs(dy) > DIRECTION_LOCK_SLOP_DP * density) {
                     verticalLocked = true
@@ -94,12 +100,14 @@ class ReaderGestureLayout @JvmOverloads constructor(
                 val elapsedSeconds = ((event.eventTime - downTime).coerceAtLeast(1L)) / 1000f
                 val dx = event.x - downX
                 val dy = event.y - downY
+                maxAbsDx = maxOf(maxAbsDx, abs(dx))
+                maxAbsDy = maxOf(maxAbsDy, abs(dy))
                 val velocityX = dx / elapsedSeconds
-                val explicitTap = isExplicitTap(event, dx, dy)
+                val explicitTap = isExplicitTap(event, maxAbsDx, maxAbsDy)
                 if (verticalLocked) {
                     onVerticalScrollFinished()
                 } else if (!scaling && !explicitTap && event.eventTime - lastSwitchAt >= SWITCH_COOLDOWN_MS) {
-                    when (chapterSwipeDecision(dx, dy, velocityX)) {
+                    when (chapterSwipeDecision(netDx = dx, maxAbsDx = maxAbsDx, maxAbsDy = maxAbsDy, velocityX = velocityX)) {
                         ChapterSwipeDecision.NextChapter -> {
                             lastSwitchAt = event.eventTime
                             onNextChapter()
@@ -139,21 +147,32 @@ class ReaderGestureLayout @JvmOverloads constructor(
         return super.dispatchTouchEvent(event)
     }
 
-    private fun isExplicitTap(event: MotionEvent, dx: Float, dy: Float): Boolean {
-        val movement = maxOf(abs(dx), abs(dy))
+    private fun isExplicitTap(event: MotionEvent, maxAbsDx: Float, maxAbsDy: Float): Boolean {
+        val movement = maxOf(maxAbsDx, maxAbsDy)
         val duration = event.eventTime - downTime
         return movement <= TAP_SLOP_DP * density && duration <= TAP_TIMEOUT_MS
     }
 
-    private fun chapterSwipeDecision(dx: Float, dy: Float, velocityX: Float): ChapterSwipeDecision {
+    private fun chapterSwipeDecision(
+        netDx: Float,
+        maxAbsDx: Float,
+        maxAbsDy: Float,
+        velocityX: Float,
+    ): ChapterSwipeDecision {
         val gestureWidth = width.takeIf { it > 0 }?.toFloat() ?: resources.displayMetrics.widthPixels.toFloat()
+        val signedMaxAbsDx =
+            when {
+                netDx < 0f -> -maxAbsDx
+                netDx > 0f -> maxAbsDx
+                else -> 0f
+            }
         return ChapterSwipeDetector(
             screenWidthPx = gestureWidth,
             density = density,
         ).evaluate(
             startXPx = downX,
-            dxPx = dx,
-            dyPx = dy,
+            dxPx = signedMaxAbsDx,
+            dyPx = maxAbsDy,
             velocityXPxPerSecond = velocityX,
         )
     }
