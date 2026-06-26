@@ -315,7 +315,14 @@ class ReaderActivity : FragmentActivity() {
         scrollWebView = webView
         webView.setOnScrollChangeListener { view, _, scrollY, _, oldScrollY ->
             if (scrollY == oldScrollY) return@setOnScrollChangeListener
-            updateReaderContentScrollProgress(webView = webView, viewport = view)
+            updateReaderContentScrollProgress(
+                webView = webView,
+                viewport = view,
+                nonScrollableProgression = ReaderScrollProgress.syntheticNonScrollableProgression(
+                    readingOrderIndex = currentReadingOrderIndex,
+                    readingOrderCount = session.chapterWeights.size,
+                ),
+            )
         }
         installImageTapBridge(webView)
         if (sampleAfterBind) {
